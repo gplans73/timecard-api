@@ -41,9 +41,11 @@
 		8AADF3DDA43A65B613AB3B14 /* TimecardStoreShim.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5DE261B8991CE1CC700AB66 /* TimecardStoreShim.swift */; };
 		A18E8B19D6129541D705099E /* AppIconSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77B872BC616906EDD7028866 /* AppIconSettingsView.swift */; };
 		C5E9BB0745D76B8A1C3E4E7B /* KeyboardDismissModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7186150A300420A149F396FD /* KeyboardDismissModifier.swift */; };
+		D39534E2DBFC22927731A645 /* Country.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64806720DE462F97D60C3223 /* Country.swift */; };
 		D3E210867AA879D545CA9280 /* JobCodeInputView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FBBAD43774097716D42C718 /* JobCodeInputView.swift */; };
 		DC460AEFCB34F954C8CF02F3 /* JobCodeTextField.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CEEAF67B52A82A75B9C0C8F /* JobCodeTextField.swift */; };
 		DD912B469541E181289F4518 /* EmailSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F75A4B4F7E5EBEBE079D3F45 /* EmailSettingsView.swift */; };
+		ED125931CF17F823C9A1D4D6 /* TimeEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96F195348C6D639FB8A34CA9 /* TimeEntry.swift */; };
 		F716365FEA5B62994B1B78DE /* AssistantTextField.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEFFA520C8788DC701F05708 /* AssistantTextField.swift */; };
 		FE602D61EB8B036D27CAD767 /* TimecardApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 738EA156A9FD089E11124461 /* TimecardApp.swift */; };
 /* End PBXBuildFile section */
@@ -81,6 +83,7 @@
 		62F848422E8C7AEF0059C024 /* ColorExtensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorExtensions.swift; sourceTree = "<group>"; };
 		62F848742E8C9F730059C024 /* RegionLocator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RegionLocator.swift; sourceTree = "<group>"; };
 		6445D874106554BC36609E03 /* TimecardLG-Bridging-Header.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; name = "TimecardLG-Bridging-Header.h"; path = "Support/BridgingHeaders/TimecardLG-Bridging-Header.h"; sourceTree = "<group>"; };
+		64806720DE462F97D60C3223 /* Country.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = Country.swift; path = Data/Mappers/Country.swift; sourceTree = "<group>"; };
 		655A19085D6415F79E4B14C1 /* CodesAndNotesView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = CodesAndNotesView.swift; path = Features/TimeEntry/Views/CodesAndNotesView.swift; sourceTree = "<group>"; };
 		7186150A300420A149F396FD /* KeyboardDismissModifier.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = KeyboardDismissModifier.swift; path = Features/TimeEntry/Views/KeyboardDismissModifier.swift; sourceTree = "<group>"; };
 		738EA156A9FD089E11124461 /* TimecardApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TimecardApp.swift; path = App/TimecardApp.swift; sourceTree = "<group>"; };
@@ -88,6 +91,7 @@
 		77B872BC616906EDD7028866 /* AppIconSettingsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AppIconSettingsView.swift; path = Features/Settings/Views/AppIconSettingsView.swift; sourceTree = "<group>"; };
 		77CA1B9C59AD6D9044A285FA /* README.md */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = net.daringfireball.markdown; name = README.md; path = Resources/README.md; sourceTree = "<group>"; };
 		945775CB35B537242BB64518 /* SettingsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SettingsView.swift; path = Features/Settings/Views/SettingsView.swift; sourceTree = "<group>"; };
+		96F195348C6D639FB8A34CA9 /* TimeEntry.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TimeEntry.swift; path = Domain/Entities/TimeEntry.swift; sourceTree = "<group>"; };
 		9FBBAD43774097716D42C718 /* JobCodeInputView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = JobCodeInputView.swift; path = Features/JobCode/Views/JobCodeInputView.swift; sourceTree = "<group>"; };
 		A24635D80804DD1873D9FE69 /* JobsSeed.csv */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text; name = JobsSeed.csv; path = Resources/Seeds/JobsSeed.csv; sourceTree = "<group>"; };
 		A5DE261B8991CE1CC700AB66 /* TimecardStoreShim.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TimecardStoreShim.swift; path = Support/Shims/TimecardStoreShim.swift; sourceTree = "<group>"; };
@@ -116,6 +120,14 @@
 				94A42D3807A6552D6DCB29D2 /* Settings */,
 			);
 			name = Features;
+			sourceTree = "<group>";
+		};
+		1461A60C6C3C85D9A3DE8189 /* Data */ = {
+			isa = PBXGroup;
+			children = (
+				8867A11334AC1C83932D7A71 /* Mappers */,
+			);
+			name = Data;
 			sourceTree = "<group>";
 		};
 		1932D822684EE543696D9D3D /* Views */ = {
@@ -203,7 +215,17 @@
 				729DF138F9FDC3779D4C9E55 /* Resources */,
 				0B979F65CB846D9E5F573754 /* Features */,
 				9E285A24F3D89BC81AE32037 /* Services */,
+				1461A60C6C3C85D9A3DE8189 /* Data */,
+				63D775F8C95BC416E2C19BF1 /* Domain */,
 			);
+			sourceTree = "<group>";
+		};
+		63D775F8C95BC416E2C19BF1 /* Domain */ = {
+			isa = PBXGroup;
+			children = (
+				FFF87E50FA5CC73CDFE46324 /* Entities */,
+			);
+			name = Domain;
 			sourceTree = "<group>";
 		};
 		688AEB1EF50809B076E3C476 /* Shims */ = {
@@ -233,6 +255,14 @@
 				77CA1B9C59AD6D9044A285FA /* README.md */,
 			);
 			name = Resources;
+			sourceTree = "<group>";
+		};
+		8867A11334AC1C83932D7A71 /* Mappers */ = {
+			isa = PBXGroup;
+			children = (
+				64806720DE462F97D60C3223 /* Country.swift */,
+			);
+			name = Mappers;
 			sourceTree = "<group>";
 		};
 		9160F21BAB4576C872D6729C /* App */ = {
@@ -301,6 +331,14 @@
 				9FBBAD43774097716D42C718 /* JobCodeInputView.swift */,
 			);
 			name = Views;
+			sourceTree = "<group>";
+		};
+		FFF87E50FA5CC73CDFE46324 /* Entities */ = {
+			isa = PBXGroup;
+			children = (
+				96F195348C6D639FB8A34CA9 /* TimeEntry.swift */,
+			);
+			name = Entities;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -417,6 +455,8 @@
 				7E59B1C1FBDED7271DCAB578 /* TimeEntryType.swift in Sources */,
 				0C79A8BB2862085E296228DB /* IconArt.swift in Sources */,
 				8AADF3DDA43A65B613AB3B14 /* TimecardStoreShim.swift in Sources */,
+				D39534E2DBFC22927731A645 /* Country.swift in Sources */,
+				ED125931CF17F823C9A1D4D6 /* TimeEntry.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
