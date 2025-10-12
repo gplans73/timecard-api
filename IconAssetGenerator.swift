@@ -64,7 +64,7 @@ struct IconAssetGenerator {
         
         let bounds = CGRect(x: 0, y: 0, width: 1024, height: 1024)
         controller.view.bounds = bounds
-        controller.view.backgroundColor = .clear
+        controller.view.backgroundColor = Color.clear
         
         let renderer = UIGraphicsImageRenderer(size: CGSize(width: 1024, height: 1024))
         let baseImage = renderer.image { ctx in
