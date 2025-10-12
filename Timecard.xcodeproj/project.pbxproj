@@ -15,7 +15,6 @@
 		46CB94E96EE29C972371F54D /* JobCodeKeyboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BE3A2EBD39FB445A2938816 /* JobCodeKeyboard.swift */; };
 		54F4F2779C0640F74FDAD54B /* CodesAndNotesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 655A19085D6415F79E4B14C1 /* CodesAndNotesView.swift */; };
 		5B4BAFA83E27CA36498CC33D /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 945775CB35B537242BB64518 /* SettingsView.swift */; };
-		6233AE9B2E9B1AA100FBF8D7 /* Timecard-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 6233AE952E9B196900FBF8D7 /* Timecard-Info.plist */; };
 		623792A02E986B18004A699C /* ToolbarButtonsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6237929F2E986B18004A699C /* ToolbarButtonsSettingsView.swift */; };
 		62F564CD2E905B59008E6EEC /* JobsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62F564CC2E905B59008E6EEC /* JobsStore.swift */; };
 		62F848372E8C7AAD0059C024 /* MailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 620706DE2E8C735200493D54 /* MailView.swift */; };
@@ -99,7 +98,6 @@
 		620706FB2E8C735200493D54 /* UbiquitousSettingsSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UbiquitousSettingsSync.swift; sourceTree = "<group>"; };
 		620706FC2E8C735200493D54 /* View+Keyboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "View+Keyboard.swift"; sourceTree = "<group>"; };
 		620706FD2E8C735200493D54 /* XLSXWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XLSXWriter.swift; sourceTree = "<group>"; };
-		6233AE952E9B196900FBF8D7 /* Timecard-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "Timecard-Info.plist"; sourceTree = "<group>"; };
 		6237929F2E986B18004A699C /* ToolbarButtonsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolbarButtonsSettingsView.swift; sourceTree = "<group>"; };
 		623EF73B2E8DE9DA008EC7EE /* Timecard.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Timecard.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		62F564CC2E905B59008E6EEC /* JobsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JobsStore.swift; sourceTree = "<group>"; };
@@ -116,6 +114,7 @@
 		9FBBAD43774097716D42C718 /* JobCodeInputView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = JobCodeInputView.swift; path = Features/JobCode/Views/JobCodeInputView.swift; sourceTree = "<group>"; };
 		A24635D80804DD1873D9FE69 /* JobsSeed.csv */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text; name = JobsSeed.csv; path = Resources/Seeds/JobsSeed.csv; sourceTree = "<group>"; };
 		BEFFA520C8788DC701F05708 /* AssistantTextField.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AssistantTextField.swift; path = Features/JobCode/Components/AssistantTextField.swift; sourceTree = "<group>"; };
+		E8885FE8AC0C8596F836F1C7 /* Timecard-Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; name = "Timecard-Info.plist"; path = "Support/Timecard-Info.plist"; sourceTree = "<group>"; };
 		EC8C0184B2A9B18CE1800391 /* App.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = App.swift; path = App/App.swift; sourceTree = "<group>"; };
 		EE565439BBFBDD1D9A260F73 /* HistoryView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = HistoryView.swift; path = Features/Settings/Views/HistoryView.swift; sourceTree = "<group>"; };
 		F75A4B4F7E5EBEBE079D3F45 /* EmailSettingsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = EmailSettingsView.swift; path = Features/Settings/Views/EmailSettingsView.swift; sourceTree = "<group>"; };
@@ -176,12 +175,15 @@
 			children = (
 				349F5A761157400926B9589C /* Timecard-Info.plist */,
 				476E46056CC70760D5668640 /* BridgingHeaders */,
+				E8885FE8AC0C8596F836F1C7 /* Timecard-Info.plist */,
 			);
 			name = Support;
 			sourceTree = "<group>";
 		};
 		6233AE932E9B180B00FBF8D7 /* Products */ = {
 			isa = PBXGroup;
+			children = (
+			);
 			name = Products;
 			sourceTree = "<group>";
 		};
@@ -230,7 +232,6 @@
 				5143B059C39DE95375305881 /* Support */,
 				729DF138F9FDC3779D4C9E55 /* Resources */,
 				0B979F65CB846D9E5F573754 /* Features */,
-				6233AE952E9B196900FBF8D7 /* Timecard-Info.plist */,
 			);
 			sourceTree = "<group>";
 		};
@@ -383,7 +384,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				62F8484F2E8C84E70059C024 /* Assets.xcassets.zip in Resources */,
-				6233AE9B2E9B1AA100FBF8D7 /* Timecard-Info.plist in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
