@@ -35,6 +35,13 @@ struct TimecardPDFView: View {
     private var weekNumberString: String {
         return "Week #\(weekOffset + 1)"
     }
+    
+    // Pads a string with spaces up to a fixed length so it occupies consistent width with monospaced font
+    private func padToLength(_ text: String, length: Int) -> String {
+        let count = text.count
+        if count >= length { return text }
+        return text + String(repeating: " ", count: length - count)
+    }
 
     // MARK: - Helper functions for displaying timecard data
     private func formatHours(_ value: Double) -> String {
@@ -742,7 +749,7 @@ struct TimecardPDFView: View {
                         .font(.system(size: 8))
                         .bold()
                 }
-                .frame(width: dayColumnWidth, height: 55)
+                .frame(width: dayColumnWidth, height: 60)
                 .background(Color.white)
                 .overlay(Rectangle().stroke(Color.black, lineWidth: 1))
                 
@@ -750,7 +757,7 @@ struct TimecardPDFView: View {
                 Text(df.string(from: weekDates[0]))
                     .font(.system(size: 8))
                     .bold()
-                    .frame(width: dateColumnWidth, height: 55)
+                    .frame(width: dateColumnWidth, height: 60)
                     .background(Color.white)
                     .overlay(Rectangle().stroke(Color.black, lineWidth: 1))
                 
@@ -770,18 +777,22 @@ struct TimecardPDFView: View {
                     let jobDisplay = colIndex < uniqueEntries.count ? uniqueEntries[colIndex].jobDisplay : ""
                     let labourCode = colIndex < uniqueEntries.count ? uniqueEntries[colIndex].code : ""
                     
+                    let isPlaceholder = jobDisplay.isEmpty && labourCode.isEmpty
+                    
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(labourCode.isEmpty ? "Labour Code:" : labourCode)
-                            .font(.system(size: 5))
+                        Text(labourCode.isEmpty ? "Labour Code:" : padToLength(labourCode, length: 10))
+                            .font(.system(size: 7, weight: .regular, design: .monospaced))
                             .foregroundColor(.black)
-                        Text(jobDisplay.isEmpty ? "Job:" : jobDisplay)
-                            .font(.system(size: 5))
+                        Text(jobDisplay.isEmpty ? "Job:" : padToLength(jobDisplay, length: 10))
+                            .font(.system(size: 7, weight: .regular, design: .monospaced))
                             .foregroundColor(.black)
                     }
+                    .frame(width: 60, height: laborCodeColumnWidth, alignment: .trailing)
                     .rotationEffect(.degrees(-90))
-                    .fixedSize()
-                    .padding(.bottom, 4)  // Changed from 2 to 4 per instructions
-                    .frame(width: laborCodeColumnWidth, height: 55, alignment: .bottom)
+                    .padding(.bottom, 0)
+                    .offset(y: 0) // Changed from 3 to 0 per instructions
+                    .offset(y: isPlaceholder ? -15 : -5) // Changed from -18 to -21 per instructions and per requested replacement
+                    .frame(width: laborCodeColumnWidth, height: 60, alignment: .bottom)
                     .background(Color.white)
                     .overlay(Rectangle().stroke(Color.black, lineWidth: 1))
                 }
@@ -795,14 +806,14 @@ struct TimecardPDFView: View {
                         .font(.system(size: 7))
                         .bold()
                 }
-                .frame(width: shiftHoursWidth, height: 55)
+                .frame(width: shiftHoursWidth, height: 60)
                 .background(Color.white)
                 .overlay(Rectangle().stroke(Color.black, lineWidth: 1))
                 
                 // Notes header replaced with only the week label text (no "Regular Time:")
                 Text(weekNumberString)
                     .font(.system(size: 14, weight: .bold))
-                    .frame(width: notesWidth, height: 55)
+                    .frame(width: notesWidth, height: 60)
                     .background(Color.white)
                     .overlay(Rectangle().stroke(Color.black, lineWidth: 1))
             }
@@ -1151,7 +1162,7 @@ struct TimecardPDFView: View {
                 Text("Date:")
                     .font(.system(size: 8))
                     .bold()
-                    .frame(width: dayColumnWidth, height: 55)
+                    .frame(width: dayColumnWidth, height: 60)
                     .background(Color.white)
                     .overlay(Rectangle().stroke(Color.black, lineWidth: 1))
                 
@@ -1159,7 +1170,7 @@ struct TimecardPDFView: View {
                 Text(df.string(from: weekDates[0]))
                     .font(.system(size: 8))
                     .bold()
-                    .frame(width: dateColumnWidth, height: 55)
+                    .frame(width: dateColumnWidth, height: 60)
                     .background(Color.white)
                     .overlay(Rectangle().stroke(Color.black, lineWidth: 1))
                 
@@ -1179,18 +1190,22 @@ struct TimecardPDFView: View {
                     let jobNumber = colIndex < uniqueEntries.count ? uniqueEntries[colIndex].jobNumber : ""
                     let labourCode = colIndex < uniqueEntries.count ? uniqueEntries[colIndex].code : ""
                     
+                    let isPlaceholder = jobNumber.isEmpty && labourCode.isEmpty
+                    
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(labourCode.isEmpty ? "Labour Code:" : labourCode)
-                            .font(.system(size: 5))
+                        Text(labourCode.isEmpty ? "Labour Code:" : padToLength(labourCode, length: 10))
+                            .font(.system(size: 7, weight: .regular, design: .monospaced))
                             .foregroundColor(.black)
-                        Text(jobNumber.isEmpty ? "Job:" : jobNumber)
-                            .font(.system(size: 5))
+                        Text(jobNumber.isEmpty ? "Job:" : padToLength(jobNumber, length: 8))
+                            .font(.system(size: 7, weight: .regular, design: .monospaced))
                             .foregroundColor(.black)
                     }
+                    .frame(width: 60, height: laborCodeColumnWidth, alignment: .trailing)
                     .rotationEffect(.degrees(-90))
-                    .fixedSize()
-                    .padding(.bottom, 4)  // Changed from 2 to 4 per instructions
-                    .frame(width: laborCodeColumnWidth, height: 55, alignment: .bottom)
+                    .padding(.bottom, 0)
+                    .offset(y: 0) // Changed from 3 to 0 per instructions
+                    .offset(y: isPlaceholder ? -15 : -5) // Changed from -18 to -21 per instructions and per requested replacement
+                    .frame(width: laborCodeColumnWidth, height: 60, alignment: .bottom)
                     .background(Color.white)
                     .overlay(Rectangle().stroke(Color.black, lineWidth: 1))
                 }
@@ -1198,20 +1213,20 @@ struct TimecardPDFView: View {
                 // Overtime header
                 
                 Text("Overtime")
-                    .font(.system(size: 6))
+                    .font(.system(size: 7))
                     .bold()
                     .rotationEffect(.degrees(-90))
-                    .frame(width: overtimeWidth, height: 55)
+                    .frame(width: overtimeWidth, height: 60)
                     .background(Color.white)
                     .overlay(Rectangle().stroke(Color.black, lineWidth: 1))
                     .padding(.bottom, 0)
                 
                 // Double-Time header
                 Text("Double Time")
-                    .font(.system(size: 6))
+                    .font(.system(size: 7))
                     .bold()
                     .rotationEffect(.degrees(-90))
-                    .frame(width: doubleTimeWidth, height: 55)
+                    .frame(width: doubleTimeWidth, height: 60)
                     .background(Color.white)
                     .overlay(Rectangle().stroke(Color.black, lineWidth: 1))
             }
