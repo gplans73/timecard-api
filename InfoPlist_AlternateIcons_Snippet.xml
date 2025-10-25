@@ -1,0 +1,26 @@
+
+<!-- Paste inside the root <dict> of your Info.plist -->
+<key>CFBundleIcons</key>
+<dict>
+  <key>CFBundleAlternateIcons</key>
+  <dict>
+    <key>Green</key>
+    <dict>
+      <key>CFBundleIconFiles</key>
+      <array>
+        <string>IconGreen</string>
+      </array>
+      <key>UIPrerenderedIcon</key>
+      <true/>
+    </dict>
+    <key>Red</key>
+    <dict>
+      <key>CFBundleIconFiles</key>
+      <array>
+        <string>IconRed</string>
+      </array>
+      <key>UIPrerenderedIcon</key>
+      <true/>
+    </dict>
+  </dict>
+</dict>

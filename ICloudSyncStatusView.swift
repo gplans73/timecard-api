@@ -6,10 +6,12 @@ import SwiftData
 /// - Account: shows whether an iCloud account appears available to the app
 /// - Connection: shows basic internet reachability
 /// - Quota: approximate remaining size for KVS payload (1 MB total)
+/// - KVS: availability of NSUbiquitousKeyValueStore
 struct ICloudSyncStatusView: View {
     @State private var isSignedIn: Bool = false
     @State private var isOnline: Bool = true
     @State private var kvsBytesUsed: Int = 0
+    @State private var isKVSAvailable: Bool = true
 
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var store: TimecardStore
@@ -24,6 +26,7 @@ struct ICloudSyncStatusView: View {
         Section("Status") {
             statusRow(title: "Account", ok: isSignedIn)
             statusRow(title: "Connection", ok: isOnline)
+            statusRow(title: "KVS", ok: isKVSAvailable)
             quotaRow()
 
             // Actions
@@ -33,6 +36,7 @@ struct ICloudSyncStatusView: View {
                 isBusy = false
                 alertMessage = summary
                 refreshQuota()
+                refreshKVSAvailability()
                 reloadLog()
             } label: {
                 Text("Sync Now").frame(maxWidth: .infinity)
@@ -46,6 +50,7 @@ struct ICloudSyncStatusView: View {
                 isBusy = false
                 alertMessage = summary
                 refreshQuota()
+                refreshKVSAvailability()
                 reloadLog()
             } label: {
                 Text("Reset iCloud Database").frame(maxWidth: .infinity)
@@ -77,10 +82,18 @@ struct ICloudSyncStatusView: View {
         .onAppear {
             refreshAccount()
             refreshQuota()
+            refreshKVSAvailability()
             startNetworkMonitoring()
             reloadLog()
         }
         .onDisappear { monitor.cancel() }
+    }
+
+    private func refreshKVSAvailability() {
+        // Use synchronize as a lightweight availability proxy
+        // KVS is considered available when synchronize succeeds and account/network look OK
+        let success = NSUbiquitousKeyValueStore.default.synchronize()
+        self.isKVSAvailable = success && self.isSignedIn && self.isOnline
     }
 
     @ViewBuilder
@@ -102,16 +115,15 @@ struct ICloudSyncStatusView: View {
         HStack {
             Text("Quota")
             Spacer()
+            // Center the text in a fixed trailing area so it doesn't collide with the status dot
+            Text("\(remaining / 1_000) KB left")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .frame(width: 80, alignment: .center)
             Image(systemName: "circle.fill")
                 .foregroundStyle(ok ? .green : .yellow)
                 .font(.system(size: 12))
                 .accessibilityLabel(ok ? "OK" : "Low")
-        }
-        .overlay(alignment: .bottomTrailing) {
-            Text("\(remaining / 1_000) KB left")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .padding(.top, 2)
         }
     }
 
@@ -122,21 +134,44 @@ struct ICloudSyncStatusView: View {
         #else
         isSignedIn = FileManager.default.ubiquityIdentityToken != nil
         #endif
+        refreshKVSAvailability()
+    }
+
+    private func kvsValueSize(_ value: Any) -> Int {
+        // Safely approximate size for supported KVS types without risking Objective-C exceptions
+        switch value {
+        case let s as String:
+            return s.utf8.count
+        case let d as Data:
+            return d.count
+        case let n as NSNumber:
+            // Approximate numeric storage; use 8 bytes for numbers/bools
+            return 8
+        case let arr as [Any]:
+            // Sum of element sizes plus minimal separators
+            return arr.reduce(2) { $0 + kvsValueSize($1) + 1 } // brackets + commas
+        case let dict as [String: Any]:
+            // Sum of key/value sizes plus minimal separators
+            return dict.reduce(2) { partial, pair in
+                let (k, v) = pair
+                return partial + k.utf8.count + kvsValueSize(v) + 2 // quotes/colon/comma approx
+            }
+        case let date as Date:
+            // Store ISO8601 string length approximation
+            let iso = ISO8601DateFormatter().string(from: date)
+            return iso.utf8.count
+        default:
+            // Fallback for unsupported types
+            return 64
+        }
     }
 
     private func refreshQuota() {
         let kvs = NSUbiquitousKeyValueStore.default
         var used = 0
-        for (key, _) in kvs.dictionaryRepresentation {
-            // Use JSON size approximation for each value
-            if let value = kvs.object(forKey: key) {
-                if let data = try? JSONSerialization.data(withJSONObject: value, options: []) {
-                    used += data.count + key.utf8.count
-                } else {
-                    // Fallback: rough estimate for non-JSON-serializable values
-                    used += key.utf8.count + 64
-                }
-            }
+        for (key, value) in kvs.dictionaryRepresentation {
+            used += key.utf8.count
+            used += kvsValueSize(value)
         }
         kvsBytesUsed = used
     }
@@ -145,6 +180,7 @@ struct ICloudSyncStatusView: View {
         monitor.pathUpdateHandler = { path in
             DispatchQueue.main.async {
                 self.isOnline = path.status == .satisfied
+                self.refreshKVSAvailability()
             }
         }
         monitor.start(queue: DispatchQueue(label: "ICloudSyncStatusView.Network"))

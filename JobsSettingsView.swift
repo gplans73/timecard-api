@@ -5,12 +5,14 @@ struct JobsSettingsView: View {
     @Environment(\.editMode) private var editMode
     @EnvironmentObject var store: TimecardStore
     @SwiftUI.State private var isEditing: Bool = false
-    @SwiftUI.State private var showImportSheet: Bool = false
-    @SwiftUI.State private var importText: String = ""
 
     @SwiftUI.State private var showFileImporter: Bool = false
     @SwiftUI.State private var importedJobs: [Job] = []
     @SwiftUI.State private var showImportChoice: Bool = false
+
+    @SwiftUI.State private var showAddJobSheet: Bool = false
+    @SwiftUI.State private var newJobName: String = ""
+    @SwiftUI.State private var newJobCode: String = ""
 
     var body: some View {
         List {
@@ -57,13 +59,12 @@ struct JobsSettingsView: View {
         .navigationTitle("Jobs")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            // Removed the original leading reorder toggle button here
-
-            // Leading: Add Job only while editing
-            if isEditing {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Add Job") { store.jobs.append(Job(name: "New Job", code: "")) }
+            // Leading: Always show Add Job
+            ToolbarItem(placement: .topBarLeading) {
+                Button(action: { showAddJobSheet = true }) {
+                    Label("Add Job", systemImage: "plus.circle")
                 }
+                .accessibilityLabel("Add Job")
             }
 
             ToolbarItem(placement: .topBarTrailing) {
@@ -82,36 +83,77 @@ struct JobsSettingsView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     // Edit toggle
-                    Button(isEditing ? "Done Editing" : "Edit") { isEditing.toggle() }
+                    Button(isEditing ? "Done Editing" : "Edit") { 
+                        withAnimation {
+                            isEditing.toggle()
+                        }
+                    }
 
                     Divider()
 
                     // Import options
-                    Button("Import…") { showImportSheet = true }
-                    Button("Import File…") { showFileImporter = true }
+                    Button("Import File…") { 
+                        showFileImporter = true 
+                    }
+                    
+                    Button("Reload from CSV") { 
+                        // Dispatch to avoid focus system conflicts
+                        DispatchQueue.main.async {
+                            store.reloadJobsFromCSV()
+                        }
+                    }
+                    
+                    Button("Load Job Data") {
+                        // Dispatch to avoid focus system conflicts
+                        DispatchQueue.main.async {
+                            store.loadJobDataDirectly()
+                        }
+                    }
+                    
+                    Button("Reset to CSV", role: .destructive) {
+                        // Dispatch to avoid focus system conflicts
+                        DispatchQueue.main.async {
+                            store.resetJobsToCSV()
+                        }
+                    }
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
+                .menuOrder(.fixed)
             }
         }
-        .sheet(isPresented: $showImportSheet) {
+        .sheet(isPresented: $showAddJobSheet) {
             NavigationStack {
-                JobsImportView(importText: $importText, onReplaceAll: { items in
-                    // Replace entire list with imported items
-                    store.jobs = items
-                    showImportSheet = false
-                }, onAppend: { items in
-                    // Append, de-duplicating by code
-                    var existingByCode = Dictionary(uniqueKeysWithValues: store.jobs.map { ($0.code.uppercased(), $0) })
-                    for it in items {
-                        let key = it.code.uppercased()
-                        if existingByCode[key] == nil {
-                            existingByCode[key] = it
+                Form {
+                    Section(header: Text("Job Details")) {
+                        TextField("Job Name", text: $newJobName)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled(true)
+                        TextField("Code", text: $newJobCode)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled(true)
+                    }
+                }
+                .navigationTitle("Add Job")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") {
+                            showAddJobSheet = false
+                            newJobName = ""; newJobCode = ""
                         }
                     }
-                    store.jobs = Array(existingByCode.values).sorted { $0.name < $1.name }
-                    showImportSheet = false
-                })
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Add") {
+                            let name = newJobName.trimmingCharacters(in: .whitespacesAndNewlines)
+                            let code = newJobCode.trimmingCharacters(in: .whitespacesAndNewlines)
+                            guard !name.isEmpty, !code.isEmpty else { return }
+                            store.jobs.append(Job(name: name, code: code))
+                            showAddJobSheet = false
+                            newJobName = ""; newJobCode = ""
+                        }
+                        .disabled(newJobName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || newJobCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                }
             }
         }
         .fileImporter(isPresented: $showFileImporter, allowedContentTypes: [.commaSeparatedText, .plainText], allowsMultipleSelection: false) { result in
@@ -244,3 +286,4 @@ private struct JobsImportView: View {
         JobsSettingsView().environmentObject(TimecardStore.sampleStore)
     }
 }
+

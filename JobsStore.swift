@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import Playgrounds
 
 final class JobsStore: ObservableObject {
     // A stable placeholder job that appears first in lists for manual entry
@@ -149,4 +150,16 @@ extension JobsStore.Job {
     var displayCode: String { code }
     var displayName: String { name }
     var combinedDisplay: String { "\(code) – \(name)" }
+}
+
+
+#Playground {
+    let store = JobsStore()
+    store.addJob(code: "ES", name: "Electrical Services")
+    store.addManualJob(name: "Custom Work")
+    let ensured = store.ensureJob(named: "HVAC")
+    store.updateJob(JobsStore.Job(id: ensured.id, code: ensured.code, name: "HVAC Maintenance"))
+    if let id = store.jobs.last?.id { store.removeJob(id: id) }
+    store.moveJobs(from: IndexSet(integer: 1), to: 0)
+    _ = store.jobs
 }

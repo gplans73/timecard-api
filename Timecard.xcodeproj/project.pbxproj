@@ -7,98 +7,141 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		02399B681754C1987A4E005F /* HistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE565439BBFBDD1D9A260F73 /* HistoryView.swift */; };
-		0C79A8BB2862085E296228DB /* IconArt.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5328D4835146FAF1D3FDCDAA /* IconArt.swift */; };
-		0DCE72F656A33C3B55E01CC1 /* EntryRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39A29FF6C963B224CDF1D1DC /* EntryRow.swift */; };
-		54F4F2779C0640F74FDAD54B /* CodesAndNotesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 655A19085D6415F79E4B14C1 /* CodesAndNotesView.swift */; };
-		5B4BAFA83E27CA36498CC33D /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 945775CB35B537242BB64518 /* SettingsView.swift */; };
+		6204F1812E9DE82B007D4DD8 /* AppIconTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6204F1802E9DE82B007D4DD8 /* AppIconTypes.swift */; };
+		621F4D2D2EA09A43007F6805 /* AppIconViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 621F4D2C2EA09A43007F6805 /* AppIconViewModel.swift */; };
+		623792A02E986B18004A699C /* ToolbarButtonsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6237929F2E986B18004A699C /* ToolbarButtonsSettingsView.swift */; };
+		623904DD2EA0C36F0090558B /* IconSanityCheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = 623904DC2EA0C36F0090558B /* IconSanityCheck.swift */; };
+		623CA1812E971E7B00094FBC /* JobCodeInputView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 623CA1802E971E7B00094FBC /* JobCodeInputView.swift */; };
+		623CA1832E97234400094FBC /* JobCodeKeypad.swift in Sources */ = {isa = PBXBuildFile; fileRef = 623CA1822E97234400094FBC /* JobCodeKeypad.swift */; };
+		6256E3232EA047A700397649 /* DeepIconDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6256E3222EA047A700397649 /* DeepIconDiagnostics.swift */; };
+		6269EB172E8DB10100012C3F /* Timecard-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 620706D82E8C735200493D54 /* Timecard-Info.plist */; };
+		627CA04E2EA93C6300CC80F3 /* OvertimePolicySettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 627CA04D2EA93C6300CC80F3 /* OvertimePolicySettingsView.swift */; };
+		627CA0502EA93DAA00CC80F3 /* TimeTotals+DiagnosticsShim.swift in Sources */ = {isa = PBXBuildFile; fileRef = 627CA04F2EA93DAA00CC80F3 /* TimeTotals+DiagnosticsShim.swift */; };
+		629046B42E9FF0C30063F1B3 /* AppIconManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 629046B32E9FF0C30063F1B3 /* AppIconManager.swift */; };
+		62A410152E9D8ED600641376 /* PushNotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62A410142E9D8ED600641376 /* PushNotificationManager.swift */; };
+		62ABAB682EA5653400FB5792 /* TimecardStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62ABAB672EA5653400FB5792 /* TimecardStore.swift */; };
+		62B4CF552E98630B0060BF26 /* NumericKeypad.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62B4CF542E98630B0060BF26 /* NumericKeypad.swift */; };
+		62B4CF572E9867230060BF26 /* JobCodeTextField.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62B4CF562E9867230060BF26 /* JobCodeTextField.swift */; };
+		62B8BC822E90828300F3DBFE /* JobsSeed.csv in Resources */ = {isa = PBXBuildFile; fileRef = 62B8BC812E90828300F3DBFE /* JobsSeed.csv */; };
+		62C673B22E96E01700BC1D23 /* AssistantTextField.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62C673B12E96E01700BC1D23 /* AssistantTextField.swift */; };
 		62F564CD2E905B59008E6EEC /* JobsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62F564CC2E905B59008E6EEC /* JobsStore.swift */; };
+		62F848362E8C7AAD0059C024 /* README.txt in Resources */ = {isa = PBXBuildFile; fileRef = 620706E72E8C735200493D54 /* README.txt */; };
 		62F848372E8C7AAD0059C024 /* MailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 620706DE2E8C735200493D54 /* MailView.swift */; };
 		62F848382E8C7AAD0059C024 /* SendView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 620706E92E8C735200493D54 /* SendView.swift */; };
+		62F848392E8C7AAD0059C024 /* TimeEntryView_FULL_SunSatFriday_ALIGNED.swift in Sources */ = {isa = PBXBuildFile; fileRef = 620706FA2E8C735200493D54 /* TimeEntryView_FULL_SunSatFriday_ALIGNED.swift */; };
+		62F8483A2E8C7AAD0059C024 /* App.swift in Sources */ = {isa = PBXBuildFile; fileRef = 620706C52E8C735200493D54 /* App.swift */; };
+		62F8483B2E8C7AAD0059C024 /* LGSummary_FIX_internal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 620706DC2E8C735200493D54 /* LGSummary_FIX_internal.swift */; };
 		62F8483C2E8C7AAD0059C024 /* ThemeType.swift in Sources */ = {isa = PBXBuildFile; fileRef = 620706F12E8C735200493D54 /* ThemeType.swift */; };
+		62F8483D2E8C7AAD0059C024 /* PayPeriod_SunSat_FridayPay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 620706E12E8C735200493D54 /* PayPeriod_SunSat_FridayPay.swift */; };
+		62F8483E2E8C7AAD0059C024 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 620706DF2E8C735200493D54 /* Models.swift */; };
+		62F8483F2E8C7AAD0059C024 /* PayPeriodBC.swift in Sources */ = {isa = PBXBuildFile; fileRef = 620706E22E8C735200493D54 /* PayPeriodBC.swift */; };
 		62F848402E8C7AAD0059C024 /* LegacyCompat.swift in Sources */ = {isa = PBXBuildFile; fileRef = 620706DB2E8C735200493D54 /* LegacyCompat.swift */; };
 		62F848412E8C7AAD0059C024 /* PDFRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 620706E52E8C735200493D54 /* PDFRenderer.swift */; };
+		62F848482E8C849A0059C024 /* Store.swift in Sources */ = {isa = PBXBuildFile; fileRef = 620706ED2E8C735200493D54 /* Store.swift */; };
+		62F848492E8C84A80059C024 /* SwiftDataModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 620706EF2E8C735200493D54 /* SwiftDataModels.swift */; };
+		62F8484A2E8C84AF0059C024 /* BootstrapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 620706CA2E8C735200493D54 /* BootstrapView.swift */; };
 		62F8484B2E8C84B70059C024 /* SettingsSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 620706EA2E8C735200493D54 /* SettingsSync.swift */; };
+		62F8484D2E8C84D80059C024 /* AppIconSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 620706C72E8C735200493D54 /* AppIconSettingsView.swift */; };
+		62F8484E2E8C84E10059C024 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 620706C82E8C735200493D54 /* Assets.xcassets */; };
 		62F8484F2E8C84E70059C024 /* Assets.xcassets.zip in Resources */ = {isa = PBXBuildFile; fileRef = 620706C92E8C735200493D54 /* Assets.xcassets.zip */; };
+		62F848502E8C84F00059C024 /* CloudSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 620706CB2E8C735200493D54 /* CloudSupport.swift */; };
+		62F848532E8C85D10059C024 /* TimecardPDFView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 620706F92E8C735200493D54 /* TimecardPDFView.swift */; };
 		62F848542E8C85E50059C024 /* Timecard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 620706F22E8C735200493D54 /* Timecard.swift */; };
 		62F848552E8C85EC0059C024 /* ThemeSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 620706F02E8C735200493D54 /* ThemeSettingsView.swift */; };
 		62F848562E8C85F70059C024 /* SummaryTabSimple.swift in Sources */ = {isa = PBXBuildFile; fileRef = 620706EE2E8C735200493D54 /* SummaryTabSimple.swift */; };
+		62F848572E8C85FF0059C024 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 620706EB2E8C735200493D54 /* SettingsView.swift */; };
+		62F848582E8C86080059C024 /* RootView_WithSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 620706E82E8C735200493D54 /* RootView_WithSummary.swift */; };
+		62F848592E8C86250059C024 /* IconGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 620706D52E8C735200493D54 /* IconGenerator.swift */; };
 		62F8485B2E8C86300059C024 /* IconAssetGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 620706D42E8C735200493D54 /* IconAssetGenerator.swift */; };
 		62F8485F2E8C8BD30059C024 /* JobsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 620706DA2E8C735200493D54 /* JobsSettingsView.swift */; };
 		62F848602E8C8BDF0059C024 /* LogoSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 620706DD2E8C735200493D54 /* LogoSettingsView.swift */; };
+		62F848612E8C8BF70059C024 /* CodesAndNotesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 620706CC2E8C735200493D54 /* CodesAndNotesView.swift */; };
+		62F848622E8C8C0E0059C024 /* EmailSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 620706CD2E8C735200493D54 /* EmailSettingsView.swift */; };
 		62F848632E8C8C2A0059C024 /* PayPeriodSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 620706E42E8C735200493D54 /* PayPeriodSettingsView.swift */; };
 		62F848642E8C8C3B0059C024 /* OnCallSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 620706E02E8C735200493D54 /* OnCallSettingsView.swift */; };
 		62F848652E8C8C4C0059C024 /* ICloudSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 620706D22E8C735200493D54 /* ICloudSettingsView.swift */; };
 		62F848662E8C8C540059C024 /* HolidaySettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 620706D12E8C735200493D54 /* HolidaySettingsView.swift */; };
+		62F848682E8C8C630059C024 /* HistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 620706CF2E8C735200493D54 /* HistoryView.swift */; };
+		62F848692E8C8C6A0059C024 /* EntryRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 620706CE2E8C735200493D54 /* EntryRow.swift */; };
 		62F8486A2E8C8C810059C024 /* ICloudSyncStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 620706D32E8C735200493D54 /* ICloudSyncStatusView.swift */; };
+		62F8486B2E8C8C8C0059C024 /* IconSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 620706D72E8C735200493D54 /* IconSettingsView.swift */; };
+		62F8486D2E8C8CA00059C024 /* PayPeriodCalculator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 620706E32E8C735200493D54 /* PayPeriodCalculator.swift */; };
 		62F8486E2E8C8CC30059C024 /* UbiquitousSettingsSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 620706FB2E8C735200493D54 /* UbiquitousSettingsSync.swift */; };
 		62F8486F2E8C8CC80059C024 /* View+Keyboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 620706FC2E8C735200493D54 /* View+Keyboard.swift */; };
 		62F848702E8C8CD00059C024 /* XLSXWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 620706FD2E8C735200493D54 /* XLSXWriter.swift */; };
 		62F848712E8C8CDF0059C024 /* ColorExtensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62F848422E8C7AEF0059C024 /* ColorExtensions.swift */; };
 		62F848752E8C9F730059C024 /* RegionLocator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62F848742E8C9F730059C024 /* RegionLocator.swift */; };
-		7918B1138B3EEAE0B6B5CB40 /* JobCodeKeypadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02641C6C887907FEC48A28C0 /* JobCodeKeypadView.swift */; };
-		7E59B1C1FBDED7271DCAB578 /* TimeEntryType.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5118AC9A21B785195DFF0E59 /* TimeEntryType.swift */; };
-		8AADF3DDA43A65B613AB3B14 /* TimecardStoreShim.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5DE261B8991CE1CC700AB66 /* TimecardStoreShim.swift */; };
-		A18E8B19D6129541D705099E /* AppIconSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77B872BC616906EDD7028866 /* AppIconSettingsView.swift */; };
-		C5E9BB0745D76B8A1C3E4E7B /* KeyboardDismissModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7186150A300420A149F396FD /* KeyboardDismissModifier.swift */; };
-		D39534E2DBFC22927731A645 /* Country.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64806720DE462F97D60C3223 /* Country.swift */; };
-		D3E210867AA879D545CA9280 /* JobCodeInputView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FBBAD43774097716D42C718 /* JobCodeInputView.swift */; };
-		DC460AEFCB34F954C8CF02F3 /* JobCodeTextField.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CEEAF67B52A82A75B9C0C8F /* JobCodeTextField.swift */; };
-		DD912B469541E181289F4518 /* EmailSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F75A4B4F7E5EBEBE079D3F45 /* EmailSettingsView.swift */; };
-		ED125931CF17F823C9A1D4D6 /* TimeEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96F195348C6D639FB8A34CA9 /* TimeEntry.swift */; };
-		F716365FEA5B62994B1B78DE /* AssistantTextField.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEFFA520C8788DC701F05708 /* AssistantTextField.swift */; };
-		FE602D61EB8B036D27CAD767 /* TimecardApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 738EA156A9FD089E11124461 /* TimecardApp.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		02641C6C887907FEC48A28C0 /* JobCodeKeypadView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = JobCodeKeypadView.swift; path = Features/JobCode/Components/JobCodeKeypadView.swift; sourceTree = "<group>"; };
-		349F5A761157400926B9589C /* Timecard-Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; name = "Timecard-Info.plist"; path = "Support/Timecard-Info.plist"; sourceTree = "<group>"; };
-		39A29FF6C963B224CDF1D1DC /* EntryRow.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = EntryRow.swift; path = Features/TimeEntry/Views/EntryRow.swift; sourceTree = "<group>"; };
-		3CEEAF67B52A82A75B9C0C8F /* JobCodeTextField.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = JobCodeTextField.swift; path = Features/JobCode/Components/JobCodeTextField.swift; sourceTree = "<group>"; };
-		5118AC9A21B785195DFF0E59 /* TimeEntryType.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TimeEntryType.swift; path = Features/TimeEntry/Views/TimeEntryType.swift; sourceTree = "<group>"; };
-		5328D4835146FAF1D3FDCDAA /* IconArt.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = IconArt.swift; path = Services/Generation/IconArt.swift; sourceTree = "<group>"; };
+		6204F1802E9DE82B007D4DD8 /* AppIconTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconTypes.swift; sourceTree = "<group>"; };
+		620706C52E8C735200493D54 /* App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App.swift; sourceTree = "<group>"; };
+		620706C72E8C735200493D54 /* AppIconSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconSettingsView.swift; sourceTree = "<group>"; };
+		620706C82E8C735200493D54 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		620706C92E8C735200493D54 /* Assets.xcassets.zip */ = {isa = PBXFileReference; lastKnownFileType = archive.zip; path = Assets.xcassets.zip; sourceTree = "<group>"; };
+		620706CA2E8C735200493D54 /* BootstrapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BootstrapView.swift; sourceTree = "<group>"; };
+		620706CB2E8C735200493D54 /* CloudSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudSupport.swift; sourceTree = "<group>"; };
+		620706CC2E8C735200493D54 /* CodesAndNotesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodesAndNotesView.swift; sourceTree = "<group>"; };
+		620706CD2E8C735200493D54 /* EmailSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailSettingsView.swift; sourceTree = "<group>"; };
+		620706CE2E8C735200493D54 /* EntryRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryRow.swift; sourceTree = "<group>"; };
+		620706CF2E8C735200493D54 /* HistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryView.swift; sourceTree = "<group>"; };
 		620706D12E8C735200493D54 /* HolidaySettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HolidaySettingsView.swift; sourceTree = "<group>"; };
 		620706D22E8C735200493D54 /* ICloudSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ICloudSettingsView.swift; sourceTree = "<group>"; };
 		620706D32E8C735200493D54 /* ICloudSyncStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ICloudSyncStatusView.swift; sourceTree = "<group>"; };
 		620706D42E8C735200493D54 /* IconAssetGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconAssetGenerator.swift; sourceTree = "<group>"; };
+		620706D52E8C735200493D54 /* IconGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconGenerator.swift; sourceTree = "<group>"; };
+		620706D72E8C735200493D54 /* IconSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconSettingsView.swift; sourceTree = "<group>"; };
+		620706D82E8C735200493D54 /* Timecard-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "Timecard-Info.plist"; sourceTree = "<group>"; };
 		620706DA2E8C735200493D54 /* JobsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JobsSettingsView.swift; sourceTree = "<group>"; };
 		620706DB2E8C735200493D54 /* LegacyCompat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegacyCompat.swift; sourceTree = "<group>"; };
+		620706DC2E8C735200493D54 /* LGSummary_FIX_internal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LGSummary_FIX_internal.swift; sourceTree = "<group>"; };
 		620706DD2E8C735200493D54 /* LogoSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogoSettingsView.swift; sourceTree = "<group>"; };
 		620706DE2E8C735200493D54 /* MailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MailView.swift; sourceTree = "<group>"; };
+		620706DF2E8C735200493D54 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		620706E02E8C735200493D54 /* OnCallSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnCallSettingsView.swift; sourceTree = "<group>"; };
+		620706E12E8C735200493D54 /* PayPeriod_SunSat_FridayPay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PayPeriod_SunSat_FridayPay.swift; sourceTree = "<group>"; };
+		620706E22E8C735200493D54 /* PayPeriodBC.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PayPeriodBC.swift; sourceTree = "<group>"; };
+		620706E32E8C735200493D54 /* PayPeriodCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PayPeriodCalculator.swift; sourceTree = "<group>"; };
 		620706E42E8C735200493D54 /* PayPeriodSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PayPeriodSettingsView.swift; sourceTree = "<group>"; };
 		620706E52E8C735200493D54 /* PDFRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFRenderer.swift; sourceTree = "<group>"; };
+		620706E72E8C735200493D54 /* README.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = README.txt; sourceTree = "<group>"; };
+		620706E82E8C735200493D54 /* RootView_WithSummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView_WithSummary.swift; sourceTree = "<group>"; };
 		620706E92E8C735200493D54 /* SendView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SendView.swift; sourceTree = "<group>"; };
 		620706EA2E8C735200493D54 /* SettingsSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsSync.swift; sourceTree = "<group>"; };
+		620706EB2E8C735200493D54 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		620706ED2E8C735200493D54 /* Store.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Store.swift; sourceTree = "<group>"; };
 		620706EE2E8C735200493D54 /* SummaryTabSimple.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryTabSimple.swift; sourceTree = "<group>"; };
+		620706EF2E8C735200493D54 /* SwiftDataModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwiftDataModels.swift; sourceTree = "<group>"; };
 		620706F02E8C735200493D54 /* ThemeSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeSettingsView.swift; sourceTree = "<group>"; };
 		620706F12E8C735200493D54 /* ThemeType.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeType.swift; sourceTree = "<group>"; };
 		620706F22E8C735200493D54 /* Timecard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Timecard.swift; sourceTree = "<group>"; };
 		620706F62E8C735200493D54 /* Timecard.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = Timecard.xcodeproj; sourceTree = "<group>"; };
+		620706F92E8C735200493D54 /* TimecardPDFView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimecardPDFView.swift; sourceTree = "<group>"; };
+		620706FA2E8C735200493D54 /* TimeEntryView_FULL_SunSatFriday_ALIGNED.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeEntryView_FULL_SunSatFriday_ALIGNED.swift; sourceTree = "<group>"; };
 		620706FB2E8C735200493D54 /* UbiquitousSettingsSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UbiquitousSettingsSync.swift; sourceTree = "<group>"; };
 		620706FC2E8C735200493D54 /* View+Keyboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "View+Keyboard.swift"; sourceTree = "<group>"; };
 		620706FD2E8C735200493D54 /* XLSXWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XLSXWriter.swift; sourceTree = "<group>"; };
+		620764BB2E9D85C6005807ED /* Timecard.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Timecard.entitlements; sourceTree = "<group>"; };
+		621F4D2C2EA09A43007F6805 /* AppIconViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconViewModel.swift; sourceTree = "<group>"; };
+		6237929F2E986B18004A699C /* ToolbarButtonsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolbarButtonsSettingsView.swift; sourceTree = "<group>"; };
+		623904DC2EA0C36F0090558B /* IconSanityCheck.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconSanityCheck.swift; sourceTree = "<group>"; };
+		623CA17F2E971D4900094FBC /* TimecardLG-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "TimecardLG-Bridging-Header.h"; sourceTree = "<group>"; };
+		623CA1802E971E7B00094FBC /* JobCodeInputView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JobCodeInputView.swift; sourceTree = "<group>"; };
+		623CA1822E97234400094FBC /* JobCodeKeypad.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JobCodeKeypad.swift; sourceTree = "<group>"; };
+		623EF73B2E8DE9DA008EC7EE /* Timecard.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Timecard.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		6256E3222EA047A700397649 /* DeepIconDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepIconDiagnostics.swift; sourceTree = "<group>"; };
+		627CA04D2EA93C6300CC80F3 /* OvertimePolicySettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OvertimePolicySettingsView.swift; sourceTree = "<group>"; };
+		627CA04F2EA93DAA00CC80F3 /* TimeTotals+DiagnosticsShim.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TimeTotals+DiagnosticsShim.swift"; sourceTree = "<group>"; };
+		629046B32E9FF0C30063F1B3 /* AppIconManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconManager.swift; sourceTree = "<group>"; };
+		62A410142E9D8ED600641376 /* PushNotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushNotificationManager.swift; sourceTree = "<group>"; };
+		62ABAB672EA5653400FB5792 /* TimecardStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimecardStore.swift; sourceTree = "<group>"; };
+		62B4CF542E98630B0060BF26 /* NumericKeypad.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NumericKeypad.swift; sourceTree = "<group>"; };
+		62B4CF562E9867230060BF26 /* JobCodeTextField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JobCodeTextField.swift; sourceTree = "<group>"; };
+		62B8BC812E90828300F3DBFE /* JobsSeed.csv */ = {isa = PBXFileReference; lastKnownFileType = text; path = JobsSeed.csv; sourceTree = "<group>"; };
+		62C673B12E96E01700BC1D23 /* AssistantTextField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantTextField.swift; sourceTree = "<group>"; };
 		62F564CC2E905B59008E6EEC /* JobsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JobsStore.swift; sourceTree = "<group>"; };
 		62F848422E8C7AEF0059C024 /* ColorExtensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorExtensions.swift; sourceTree = "<group>"; };
 		62F848742E8C9F730059C024 /* RegionLocator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RegionLocator.swift; sourceTree = "<group>"; };
-		6445D874106554BC36609E03 /* TimecardLG-Bridging-Header.h */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.h; name = "TimecardLG-Bridging-Header.h"; path = "Support/BridgingHeaders/TimecardLG-Bridging-Header.h"; sourceTree = "<group>"; };
-		64806720DE462F97D60C3223 /* Country.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = Country.swift; path = Data/Mappers/Country.swift; sourceTree = "<group>"; };
-		655A19085D6415F79E4B14C1 /* CodesAndNotesView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = CodesAndNotesView.swift; path = Features/TimeEntry/Views/CodesAndNotesView.swift; sourceTree = "<group>"; };
-		7186150A300420A149F396FD /* KeyboardDismissModifier.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = KeyboardDismissModifier.swift; path = Features/TimeEntry/Views/KeyboardDismissModifier.swift; sourceTree = "<group>"; };
-		738EA156A9FD089E11124461 /* TimecardApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TimecardApp.swift; path = App/TimecardApp.swift; sourceTree = "<group>"; };
-		749558D7891462C1326A896D /* InfoPlist.strings */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.strings; name = InfoPlist.strings; path = Resources/InfoPlist.strings; sourceTree = "<group>"; };
-		77B872BC616906EDD7028866 /* AppIconSettingsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AppIconSettingsView.swift; path = Features/Settings/Views/AppIconSettingsView.swift; sourceTree = "<group>"; };
-		77CA1B9C59AD6D9044A285FA /* README.md */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = net.daringfireball.markdown; name = README.md; path = Resources/README.md; sourceTree = "<group>"; };
-		945775CB35B537242BB64518 /* SettingsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SettingsView.swift; path = Features/Settings/Views/SettingsView.swift; sourceTree = "<group>"; };
-		96F195348C6D639FB8A34CA9 /* TimeEntry.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TimeEntry.swift; path = Domain/Entities/TimeEntry.swift; sourceTree = "<group>"; };
-		9FBBAD43774097716D42C718 /* JobCodeInputView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = JobCodeInputView.swift; path = Features/JobCode/Views/JobCodeInputView.swift; sourceTree = "<group>"; };
-		A24635D80804DD1873D9FE69 /* JobsSeed.csv */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text; name = JobsSeed.csv; path = Resources/Seeds/JobsSeed.csv; sourceTree = "<group>"; };
-		A5DE261B8991CE1CC700AB66 /* TimecardStoreShim.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TimecardStoreShim.swift; path = Support/Shims/TimecardStoreShim.swift; sourceTree = "<group>"; };
-		BEFFA520C8788DC701F05708 /* AssistantTextField.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AssistantTextField.swift; path = Features/JobCode/Components/AssistantTextField.swift; sourceTree = "<group>"; };
-		E8885FE8AC0C8596F836F1C7 /* Timecard-Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; name = "Timecard-Info.plist"; path = "Support/Timecard-Info.plist"; sourceTree = "<group>"; };
-		EE565439BBFBDD1D9A260F73 /* HistoryView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = HistoryView.swift; path = Features/Settings/Views/HistoryView.swift; sourceTree = "<group>"; };
-		F75A4B4F7E5EBEBE079D3F45 /* EmailSettingsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = EmailSettingsView.swift; path = Features/Settings/Views/EmailSettingsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -112,233 +155,83 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		0B979F65CB846D9E5F573754 /* Features */ = {
+		620764B92E9C7FFE005807ED /* Products */ = {
 			isa = PBXGroup;
-			children = (
-				E214D7406F469FCB04320661 /* TimeEntry */,
-				9247B6D2114B5CB8002EE6EC /* JobCode */,
-				94A42D3807A6552D6DCB29D2 /* Settings */,
-			);
-			name = Features;
-			sourceTree = "<group>";
-		};
-		1461A60C6C3C85D9A3DE8189 /* Data */ = {
-			isa = PBXGroup;
-			children = (
-				8867A11334AC1C83932D7A71 /* Mappers */,
-			);
-			name = Data;
-			sourceTree = "<group>";
-		};
-		1932D822684EE543696D9D3D /* Views */ = {
-			isa = PBXGroup;
-			children = (
-				945775CB35B537242BB64518 /* SettingsView.swift */,
-				77B872BC616906EDD7028866 /* AppIconSettingsView.swift */,
-				F75A4B4F7E5EBEBE079D3F45 /* EmailSettingsView.swift */,
-				EE565439BBFBDD1D9A260F73 /* HistoryView.swift */,
-			);
-			name = Views;
-			sourceTree = "<group>";
-		};
-		4413CB42B8C24EF93CFED01A /* Generation */ = {
-			isa = PBXGroup;
-			children = (
-				5328D4835146FAF1D3FDCDAA /* IconArt.swift */,
-			);
-			name = Generation;
-			sourceTree = "<group>";
-		};
-		45EFF4C270FD715961F5B3ED /* Root */ = {
-			isa = PBXGroup;
-			children = (
-			);
-			name = Root;
-			sourceTree = "<group>";
-		};
-		476E46056CC70760D5668640 /* BridgingHeaders */ = {
-			isa = PBXGroup;
-			children = (
-				6445D874106554BC36609E03 /* TimecardLG-Bridging-Header.h */,
-			);
-			name = BridgingHeaders;
-			sourceTree = "<group>";
-		};
-		5143B059C39DE95375305881 /* Support */ = {
-			isa = PBXGroup;
-			children = (
-				349F5A761157400926B9589C /* Timecard-Info.plist */,
-				476E46056CC70760D5668640 /* BridgingHeaders */,
-				E8885FE8AC0C8596F836F1C7 /* Timecard-Info.plist */,
-				688AEB1EF50809B076E3C476 /* Shims */,
-			);
-			name = Support;
-			sourceTree = "<group>";
-		};
-		6233AE932E9B180B00FBF8D7 /* Products */ = {
-			isa = PBXGroup;
-			children = (
-			);
 			name = Products;
 			sourceTree = "<group>";
 		};
 		6275BC0E2E720002000966DC = {
 			isa = PBXGroup;
 			children = (
+				6256E3222EA047A700397649 /* DeepIconDiagnostics.swift */,
+				620764BB2E9D85C6005807ED /* Timecard.entitlements */,
+				620706C52E8C735200493D54 /* App.swift */,
+				620706D82E8C735200493D54 /* Timecard-Info.plist */,
+				620706C72E8C735200493D54 /* AppIconSettingsView.swift */,
+				620706D42E8C735200493D54 /* IconAssetGenerator.swift */,
+				620706D72E8C735200493D54 /* IconSettingsView.swift */,
+				620706D52E8C735200493D54 /* IconGenerator.swift */,
+				629046B32E9FF0C30063F1B3 /* AppIconManager.swift */,
+				623904DC2EA0C36F0090558B /* IconSanityCheck.swift */,
+				621F4D2C2EA09A43007F6805 /* AppIconViewModel.swift */,
+				620706C82E8C735200493D54 /* Assets.xcassets */,
 				620706C92E8C735200493D54 /* Assets.xcassets.zip */,
+				620706CA2E8C735200493D54 /* BootstrapView.swift */,
+				620706CB2E8C735200493D54 /* CloudSupport.swift */,
+				623CA17F2E971D4900094FBC /* TimecardLG-Bridging-Header.h */,
+				620706CC2E8C735200493D54 /* CodesAndNotesView.swift */,
+				620706CD2E8C735200493D54 /* EmailSettingsView.swift */,
+				620706CE2E8C735200493D54 /* EntryRow.swift */,
+				620706CF2E8C735200493D54 /* HistoryView.swift */,
 				620706D12E8C735200493D54 /* HolidaySettingsView.swift */,
 				620706D22E8C735200493D54 /* ICloudSettingsView.swift */,
 				620706D32E8C735200493D54 /* ICloudSyncStatusView.swift */,
-				620706D42E8C735200493D54 /* IconAssetGenerator.swift */,
 				620706DA2E8C735200493D54 /* JobsSettingsView.swift */,
 				620706DB2E8C735200493D54 /* LegacyCompat.swift */,
+				620706DC2E8C735200493D54 /* LGSummary_FIX_internal.swift */,
 				620706DD2E8C735200493D54 /* LogoSettingsView.swift */,
 				620706DE2E8C735200493D54 /* MailView.swift */,
+				620706DF2E8C735200493D54 /* Models.swift */,
 				620706E02E8C735200493D54 /* OnCallSettingsView.swift */,
+				620706E12E8C735200493D54 /* PayPeriod_SunSat_FridayPay.swift */,
+				6204F1802E9DE82B007D4DD8 /* AppIconTypes.swift */,
+				620706E22E8C735200493D54 /* PayPeriodBC.swift */,
+				620706E32E8C735200493D54 /* PayPeriodCalculator.swift */,
 				620706E42E8C735200493D54 /* PayPeriodSettingsView.swift */,
 				620706E52E8C735200493D54 /* PDFRenderer.swift */,
+				620706E72E8C735200493D54 /* README.txt */,
+				620706E82E8C735200493D54 /* RootView_WithSummary.swift */,
 				620706E92E8C735200493D54 /* SendView.swift */,
 				620706EA2E8C735200493D54 /* SettingsSync.swift */,
+				620706EB2E8C735200493D54 /* SettingsView.swift */,
+				620706ED2E8C735200493D54 /* Store.swift */,
 				620706EE2E8C735200493D54 /* SummaryTabSimple.swift */,
+				620706EF2E8C735200493D54 /* SwiftDataModels.swift */,
 				620706F02E8C735200493D54 /* ThemeSettingsView.swift */,
 				620706F12E8C735200493D54 /* ThemeType.swift */,
 				620706F22E8C735200493D54 /* Timecard.swift */,
 				620706F62E8C735200493D54 /* Timecard.xcodeproj */,
+				620706F92E8C735200493D54 /* TimecardPDFView.swift */,
+				620706FA2E8C735200493D54 /* TimeEntryView_FULL_SunSatFriday_ALIGNED.swift */,
 				620706FB2E8C735200493D54 /* UbiquitousSettingsSync.swift */,
 				620706FC2E8C735200493D54 /* View+Keyboard.swift */,
 				620706FD2E8C735200493D54 /* XLSXWriter.swift */,
 				62F848422E8C7AEF0059C024 /* ColorExtensions.swift */,
 				62F848742E8C9F730059C024 /* RegionLocator.swift */,
+				623EF73B2E8DE9DA008EC7EE /* Timecard.app */,
 				62F564CC2E905B59008E6EEC /* JobsStore.swift */,
-				9160F21BAB4576C872D6729C /* App */,
-				5143B059C39DE95375305881 /* Support */,
-				729DF138F9FDC3779D4C9E55 /* Resources */,
-				0B979F65CB846D9E5F573754 /* Features */,
-				9E285A24F3D89BC81AE32037 /* Services */,
-				1461A60C6C3C85D9A3DE8189 /* Data */,
-				63D775F8C95BC416E2C19BF1 /* Domain */,
+				62B8BC812E90828300F3DBFE /* JobsSeed.csv */,
+				62C673B12E96E01700BC1D23 /* AssistantTextField.swift */,
+				623CA1802E971E7B00094FBC /* JobCodeInputView.swift */,
+				623CA1822E97234400094FBC /* JobCodeKeypad.swift */,
+				62B4CF542E98630B0060BF26 /* NumericKeypad.swift */,
+				62B4CF562E9867230060BF26 /* JobCodeTextField.swift */,
+				6237929F2E986B18004A699C /* ToolbarButtonsSettingsView.swift */,
+				62A410142E9D8ED600641376 /* PushNotificationManager.swift */,
+				62ABAB672EA5653400FB5792 /* TimecardStore.swift */,
+				627CA04D2EA93C6300CC80F3 /* OvertimePolicySettingsView.swift */,
+				627CA04F2EA93DAA00CC80F3 /* TimeTotals+DiagnosticsShim.swift */,
 			);
-			sourceTree = "<group>";
-		};
-		63D775F8C95BC416E2C19BF1 /* Domain */ = {
-			isa = PBXGroup;
-			children = (
-				FFF87E50FA5CC73CDFE46324 /* Entities */,
-			);
-			name = Domain;
-			sourceTree = "<group>";
-		};
-		688AEB1EF50809B076E3C476 /* Shims */ = {
-			isa = PBXGroup;
-			children = (
-				A5DE261B8991CE1CC700AB66 /* TimecardStoreShim.swift */,
-			);
-			name = Shims;
-			sourceTree = "<group>";
-		};
-		6FD842D6177AFD446C39BDD7 /* Views */ = {
-			isa = PBXGroup;
-			children = (
-				39A29FF6C963B224CDF1D1DC /* EntryRow.swift */,
-				655A19085D6415F79E4B14C1 /* CodesAndNotesView.swift */,
-				7186150A300420A149F396FD /* KeyboardDismissModifier.swift */,
-				5118AC9A21B785195DFF0E59 /* TimeEntryType.swift */,
-			);
-			name = Views;
-			sourceTree = "<group>";
-		};
-		729DF138F9FDC3779D4C9E55 /* Resources */ = {
-			isa = PBXGroup;
-			children = (
-				749558D7891462C1326A896D /* InfoPlist.strings */,
-				E1EA4C6F85D2F1DD3D2787C4 /* Seeds */,
-				77CA1B9C59AD6D9044A285FA /* README.md */,
-			);
-			name = Resources;
-			sourceTree = "<group>";
-		};
-		8867A11334AC1C83932D7A71 /* Mappers */ = {
-			isa = PBXGroup;
-			children = (
-				64806720DE462F97D60C3223 /* Country.swift */,
-			);
-			name = Mappers;
-			sourceTree = "<group>";
-		};
-		9160F21BAB4576C872D6729C /* App */ = {
-			isa = PBXGroup;
-			children = (
-				45EFF4C270FD715961F5B3ED /* Root */,
-				738EA156A9FD089E11124461 /* TimecardApp.swift */,
-			);
-			name = App;
-			sourceTree = "<group>";
-		};
-		9247B6D2114B5CB8002EE6EC /* JobCode */ = {
-			isa = PBXGroup;
-			children = (
-				F8E727D464923C86744A571D /* Views */,
-				EC0972558532689E40DC5D56 /* Components */,
-			);
-			name = JobCode;
-			sourceTree = "<group>";
-		};
-		94A42D3807A6552D6DCB29D2 /* Settings */ = {
-			isa = PBXGroup;
-			children = (
-				1932D822684EE543696D9D3D /* Views */,
-			);
-			name = Settings;
-			sourceTree = "<group>";
-		};
-		9E285A24F3D89BC81AE32037 /* Services */ = {
-			isa = PBXGroup;
-			children = (
-				4413CB42B8C24EF93CFED01A /* Generation */,
-			);
-			name = Services;
-			sourceTree = "<group>";
-		};
-		E1EA4C6F85D2F1DD3D2787C4 /* Seeds */ = {
-			isa = PBXGroup;
-			children = (
-				A24635D80804DD1873D9FE69 /* JobsSeed.csv */,
-			);
-			name = Seeds;
-			sourceTree = "<group>";
-		};
-		E214D7406F469FCB04320661 /* TimeEntry */ = {
-			isa = PBXGroup;
-			children = (
-				6FD842D6177AFD446C39BDD7 /* Views */,
-			);
-			name = TimeEntry;
-			sourceTree = "<group>";
-		};
-		EC0972558532689E40DC5D56 /* Components */ = {
-			isa = PBXGroup;
-			children = (
-				3CEEAF67B52A82A75B9C0C8F /* JobCodeTextField.swift */,
-				BEFFA520C8788DC701F05708 /* AssistantTextField.swift */,
-				02641C6C887907FEC48A28C0 /* JobCodeKeypadView.swift */,
-			);
-			name = Components;
-			sourceTree = "<group>";
-		};
-		F8E727D464923C86744A571D /* Views */ = {
-			isa = PBXGroup;
-			children = (
-				9FBBAD43774097716D42C718 /* JobCodeInputView.swift */,
-			);
-			name = Views;
-			sourceTree = "<group>";
-		};
-		FFF87E50FA5CC73CDFE46324 /* Entities */ = {
-			isa = PBXGroup;
-			children = (
-				96F195348C6D639FB8A34CA9 /* TimeEntry.swift */,
-			);
-			name = Entities;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -348,16 +241,20 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 6275BC222E720004000966DC /* Build configuration list for PBXNativeTarget "Timecard" */;
 			buildPhases = (
+				621F4D2B2EA08A6C007F6805 /* Auto-Increment Build (agvtool) */,
 				6275BC132E720002000966DC /* Sources */,
-				6275BC142E720002000966DC /* Frameworks */,
 				6275BC152E720002000966DC /* Resources */,
+				6275BC142E720002000966DC /* Frameworks */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 			);
 			name = Timecard;
+			packageProductDependencies = (
+			);
 			productName = TimecardLG;
+			productReference = 623EF73B2E8DE9DA008EC7EE /* Timecard.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -390,7 +287,7 @@
 			projectDirPath = "";
 			projectReferences = (
 				{
-					ProductGroup = 6233AE932E9B180B00FBF8D7 /* Products */;
+					ProductGroup = 620764B92E9C7FFE005807ED /* Products */;
 					ProjectRef = 620706F62E8C735200493D54 /* Timecard.xcodeproj */;
 				},
 			);
@@ -406,57 +303,102 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				62F8484E2E8C84E10059C024 /* Assets.xcassets in Resources */,
+				62B8BC822E90828300F3DBFE /* JobsSeed.csv in Resources */,
+				62F848362E8C7AAD0059C024 /* README.txt in Resources */,
 				62F8484F2E8C84E70059C024 /* Assets.xcassets.zip in Resources */,
+				6269EB172E8DB10100012C3F /* Timecard-Info.plist in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		621F4D2B2EA08A6C007F6805 /* Auto-Increment Build (agvtool) */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Auto-Increment Build (agvtool)";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "
+";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		6275BC132E720002000966DC /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				62C673B22E96E01700BC1D23 /* AssistantTextField.swift in Sources */,
 				62F848372E8C7AAD0059C024 /* MailView.swift in Sources */,
+				62A410152E9D8ED600641376 /* PushNotificationManager.swift in Sources */,
+				623CA1832E97234400094FBC /* JobCodeKeypad.swift in Sources */,
+				6204F1812E9DE82B007D4DD8 /* AppIconTypes.swift in Sources */,
+				62F8484A2E8C84AF0059C024 /* BootstrapView.swift in Sources */,
 				62F848382E8C7AAD0059C024 /* SendView.swift in Sources */,
+				62ABAB682EA5653400FB5792 /* TimecardStore.swift in Sources */,
+				62F848692E8C8C6A0059C024 /* EntryRow.swift in Sources */,
+				62F8486B2E8C8C8C0059C024 /* IconSettingsView.swift in Sources */,
 				62F848652E8C8C4C0059C024 /* ICloudSettingsView.swift in Sources */,
 				62F848752E8C9F730059C024 /* RegionLocator.swift in Sources */,
+				627CA04E2EA93C6300CC80F3 /* OvertimePolicySettingsView.swift in Sources */,
+				62F848682E8C8C630059C024 /* HistoryView.swift in Sources */,
 				62F848632E8C8C2A0059C024 /* PayPeriodSettingsView.swift in Sources */,
 				62F8485B2E8C86300059C024 /* IconAssetGenerator.swift in Sources */,
 				62F848542E8C85E50059C024 /* Timecard.swift in Sources */,
+				623904DD2EA0C36F0090558B /* IconSanityCheck.swift in Sources */,
+				62F8484D2E8C84D80059C024 /* AppIconSettingsView.swift in Sources */,
 				62F8486E2E8C8CC30059C024 /* UbiquitousSettingsSync.swift in Sources */,
+				623CA1812E971E7B00094FBC /* JobCodeInputView.swift in Sources */,
+				629046B42E9FF0C30063F1B3 /* AppIconManager.swift in Sources */,
+				62F848392E8C7AAD0059C024 /* TimeEntryView_FULL_SunSatFriday_ALIGNED.swift in Sources */,
 				62F564CD2E905B59008E6EEC /* JobsStore.swift in Sources */,
+				6256E3232EA047A700397649 /* DeepIconDiagnostics.swift in Sources */,
+				62B4CF552E98630B0060BF26 /* NumericKeypad.swift in Sources */,
 				62F848642E8C8C3B0059C024 /* OnCallSettingsView.swift in Sources */,
 				62F848552E8C85EC0059C024 /* ThemeSettingsView.swift in Sources */,
+				62F848482E8C849A0059C024 /* Store.swift in Sources */,
+				62F848582E8C86080059C024 /* RootView_WithSummary.swift in Sources */,
 				62F8486A2E8C8C810059C024 /* ICloudSyncStatusView.swift in Sources */,
+				62F848492E8C84A80059C024 /* SwiftDataModels.swift in Sources */,
+				62F8483A2E8C7AAD0059C024 /* App.swift in Sources */,
 				62F848662E8C8C540059C024 /* HolidaySettingsView.swift in Sources */,
+				62F8483B2E8C7AAD0059C024 /* LGSummary_FIX_internal.swift in Sources */,
 				62F8483C2E8C7AAD0059C024 /* ThemeType.swift in Sources */,
+				62F848572E8C85FF0059C024 /* SettingsView.swift in Sources */,
+				62F8483D2E8C7AAD0059C024 /* PayPeriod_SunSat_FridayPay.swift in Sources */,
 				62F848562E8C85F70059C024 /* SummaryTabSimple.swift in Sources */,
+				62B4CF572E9867230060BF26 /* JobCodeTextField.swift in Sources */,
+				62F848592E8C86250059C024 /* IconGenerator.swift in Sources */,
+				62F8483E2E8C7AAD0059C024 /* Models.swift in Sources */,
+				62F848612E8C8BF70059C024 /* CodesAndNotesView.swift in Sources */,
 				62F848602E8C8BDF0059C024 /* LogoSettingsView.swift in Sources */,
+				62F848502E8C84F00059C024 /* CloudSupport.swift in Sources */,
+				627CA0502EA93DAA00CC80F3 /* TimeTotals+DiagnosticsShim.swift in Sources */,
+				62F848622E8C8C0E0059C024 /* EmailSettingsView.swift in Sources */,
 				62F848702E8C8CD00059C024 /* XLSXWriter.swift in Sources */,
+				62F8483F2E8C7AAD0059C024 /* PayPeriodBC.swift in Sources */,
 				62F8486F2E8C8CC80059C024 /* View+Keyboard.swift in Sources */,
 				62F848402E8C7AAD0059C024 /* LegacyCompat.swift in Sources */,
 				62F8484B2E8C84B70059C024 /* SettingsSync.swift in Sources */,
 				62F848412E8C7AAD0059C024 /* PDFRenderer.swift in Sources */,
+				62F848532E8C85D10059C024 /* TimecardPDFView.swift in Sources */,
 				62F8485F2E8C8BD30059C024 /* JobsSettingsView.swift in Sources */,
+				621F4D2D2EA09A43007F6805 /* AppIconViewModel.swift in Sources */,
+				62F8486D2E8C8CA00059C024 /* PayPeriodCalculator.swift in Sources */,
+				623792A02E986B18004A699C /* ToolbarButtonsSettingsView.swift in Sources */,
 				62F848712E8C8CDF0059C024 /* ColorExtensions.swift in Sources */,
-				0DCE72F656A33C3B55E01CC1 /* EntryRow.swift in Sources */,
-				54F4F2779C0640F74FDAD54B /* CodesAndNotesView.swift in Sources */,
-				D3E210867AA879D545CA9280 /* JobCodeInputView.swift in Sources */,
-				DC460AEFCB34F954C8CF02F3 /* JobCodeTextField.swift in Sources */,
-				F716365FEA5B62994B1B78DE /* AssistantTextField.swift in Sources */,
-				5B4BAFA83E27CA36498CC33D /* SettingsView.swift in Sources */,
-				A18E8B19D6129541D705099E /* AppIconSettingsView.swift in Sources */,
-				DD912B469541E181289F4518 /* EmailSettingsView.swift in Sources */,
-				02399B681754C1987A4E005F /* HistoryView.swift in Sources */,
-				FE602D61EB8B036D27CAD767 /* TimecardApp.swift in Sources */,
-				7918B1138B3EEAE0B6B5CB40 /* JobCodeKeypadView.swift in Sources */,
-				C5E9BB0745D76B8A1C3E4E7B /* KeyboardDismissModifier.swift in Sources */,
-				7E59B1C1FBDED7271DCAB578 /* TimeEntryType.swift in Sources */,
-				0C79A8BB2862085E296228DB /* IconArt.swift in Sources */,
-				8AADF3DDA43A65B613AB3B14 /* TimecardStoreShim.swift in Sources */,
-				D39534E2DBFC22927731A645 /* Country.swift in Sources */,
-				ED125931CF17F823C9A1D4D6 /* TimeEntry.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -580,12 +522,14 @@
 		6275BC232E720004000966DC /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "classic Applcon Applcon1 Applcon2 Applcon3 Applcon4 Applcon5 Applcon6 Applcon6 Applcon7 Applcon8";
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconLGDark;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = Timecard.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = B26NRY5F3Q;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_FILE_ACCESS_PICTURE_FOLDER = readonly;
@@ -605,6 +549,7 @@
 				INFOPLIST_FILE = "Timecard-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = Timecard;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.business";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "We use your location to tag your time entries with the job site location when you clock in and out.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -633,11 +578,12 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_OBJC_BRIDGING_HEADER = "";
+				SWIFT_OBJC_BRIDGING_HEADER = "TimecardLG-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
+				VERSIONING_SYSTEM = "";
 				XROS_DEPLOYMENT_TARGET = 26.0;
 			};
 			name = Debug;
@@ -645,12 +591,14 @@
 		6275BC242E720004000966DC /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "classic Applcon Applcon1 Applcon2 Applcon3 Applcon4 Applcon5 Applcon6 Applcon6 Applcon7 Applcon8";
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIconLGDark;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = Timecard.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = B26NRY5F3Q;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_FILE_ACCESS_PICTURE_FOLDER = readonly;
@@ -670,6 +618,7 @@
 				INFOPLIST_FILE = "Timecard-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = Timecard;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.business";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "We use your location to tag your time entries with the job site location when you clock in and out.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -698,10 +647,11 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_OBJC_BRIDGING_HEADER = "";
+				SWIFT_OBJC_BRIDGING_HEADER = "TimecardLG-Bridging-Header.h";
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
+				VERSIONING_SYSTEM = "";
 				XROS_DEPLOYMENT_TARGET = 26.0;
 			};
 			name = Release;

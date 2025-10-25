@@ -32,6 +32,7 @@ struct ICloudSettingsView: View {
                 Text("Email settings and templates")
                 Text("Jobs (names & numbers)")
                 Text("Codes (labour codes list)")
+                Text("Toolbar Buttons (input accessory)")
             }
 
             Section(header: Text("Status").font(.headline)) {
@@ -40,14 +41,27 @@ struct ICloudSettingsView: View {
         }
         .navigationTitle("iCloud")
         .onAppear {
+            UbiquitousSettingsSync.enabled = icloudSyncEnabled
             if icloudSyncEnabled {
                 UbiquitousSettingsSync.shared.start()
             }
+#if canImport(UIKit)
+            // Register for remote notifications when iCloud sync is enabled
+            if icloudSyncEnabled {
+                PushNotificationManager.registerForRemoteNotifications()
+            }
+#endif
         }
         .onChange(of: icloudSyncEnabled) { _, newValue in
+            UbiquitousSettingsSync.enabled = newValue
             if newValue {
                 UbiquitousSettingsSync.shared.start()
             }
+#if canImport(UIKit)
+            if newValue {
+                PushNotificationManager.registerForRemoteNotifications()
+            }
+#endif
         }
         .onChange(of: appThemeRaw) { _, newVal in
             if icloudSyncEnabled {

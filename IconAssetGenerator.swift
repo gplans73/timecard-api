@@ -1,26 +1,18 @@
 import SwiftUI
+import Playgrounds
 
 // MARK: - Icon Asset Creator
 // This is a helper to generate icon assets for your project
-struct IconAssetGenerator {
+func generateIconSets() -> [IconSet] {
+    return [
+        IconSet(name: "AppIcon Red", colors: [], isDefault: false),
+        
     
-    /// Generates icon sets that match the AppIcon enum cases
-    static func generateIconSets() -> [IconSet] {
-        return [
-            IconSet(name: "AppIcon", colors: [.blue, .cyan], isDefault: true),
-            IconSet(name: "Applcon", colors: [.blue, .cyan]),
-            IconSet(name: "Applcon2", colors: [.green, .mint]),
-            IconSet(name: "Applcon3", colors: [.red, .orange]),
-            IconSet(name: "Applcon4", colors: [.purple, .indigo]),
-            IconSet(name: "Applcon5", colors: [.teal, .blue]),
-            IconSet(name: "Applcon6", colors: [.orange, .yellow]),
-            IconSet(name: "Applcon7", colors: [.pink, .purple]),
-            IconSet(name: "Applcon8", colors: [.brown, .orange])
-        ]
-    }
+    ]
+}
     
     /// Generates all required icon sizes for each icon set
-    static func generateAllAssets() -> [URL] {
+func generateAllAssets() -> [URL] {
         var urls: [URL] = []
         let iconSets = generateIconSets()
         
@@ -31,7 +23,7 @@ struct IconAssetGenerator {
         return urls
     }
     
-    private static func generateIconSet(_ iconSet: IconSet) -> [URL] {
+private func generateIconSet(_ iconSet: IconSet) -> [URL] {
         var urls: [URL] = []
         
         // Standard icon sizes for iOS
@@ -56,7 +48,7 @@ struct IconAssetGenerator {
         return urls
     }
     
-    private static func generateIcon(iconSet: IconSet, size: CGFloat, suffix: String) -> URL? {
+private func generateIcon(iconSet: IconSet, size: CGFloat, suffix: String) -> URL? {
         #if canImport(UIKit)
         let controller = UIHostingController(
             rootView: IconArt(colors: iconSet.colors, symbol: "doc.text")
@@ -64,7 +56,7 @@ struct IconAssetGenerator {
         
         let bounds = CGRect(x: 0, y: 0, width: 1024, height: 1024)
         controller.view.bounds = bounds
-        controller.view.backgroundColor = Color.clear
+        controller.view.backgroundColor = .clear
         
         let renderer = UIGraphicsImageRenderer(size: CGSize(width: 1024, height: 1024))
         let baseImage = renderer.image { ctx in
@@ -103,7 +95,7 @@ struct IconAssetGenerator {
         return nil
         #endif
     }
-}
+
 
 struct IconSet {
     let name: String
@@ -115,4 +107,17 @@ struct IconSet {
         self.colors = colors
         self.isDefault = isDefault
     }
+}
+
+
+#Preview {
+    IconArt(colors: [.blue, .cyan], symbol: "doc.text")
+}
+
+
+#Playground {
+    let sets = generateIconSets()
+    let defaultSet = sets.first(where: { $0.isDefault })
+    let names = sets.map(\.name)
+    let colorsOfFirst = sets.first?.colors ?? []
 }

@@ -11,18 +11,20 @@ struct PayPeriodSettingsView: View {
 
     var body: some View {
         List {
-            // Current pay period info
             Section(header: Text("Current Pay Period").font(.headline)) {
-                LabeledContent("Start") { Text(dateString(store.payPeriodRange.lowerBound)) }
-                LabeledContent("End") { Text(dateString(store.payPeriodRange.upperBound)) }
-                LabeledContent("Pay Period #") {
-                    Stepper(value: Binding(
-                        get: { store.payPeriodNumber },
-                        set: { store.payPeriodNumber = $0 }
-                    ), in: 1...30) {
-                        Text("\(store.payPeriodNumber)")
-                    }
-                }
+                let pp = OddPayPeriodCalc.period(containing: store.weekStart)
+                LabeledContent("Start") { Text(dateString(pp.start)) }
+                LabeledContent("End") { Text(dateString(pp.end)) }
+                LabeledContent("Pay Period #") { Text("\(pp.numberOdd)") }
+            }
+
+            Section(header: Text("Previous Pay Period").font(.headline)) {
+                let curr = OddPayPeriodCalc.period(containing: store.weekStart)
+                let prevRef = Calendar.current.date(byAdding: .day, value: -14, to: curr.start) ?? curr.start
+                let prev = OddPayPeriodCalc.period(containing: prevRef)
+                LabeledContent("Start") { Text(dateString(prev.start)) }
+                LabeledContent("End") { Text(dateString(prev.end)) }
+                LabeledContent("Pay Period #") { Text("\(prev.numberOdd)") }
             }
 
             // Adjustments
@@ -67,8 +69,8 @@ struct PayPeriodSettingsView: View {
                     let comps = cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now)
                     let startOfWeek = cal.date(from: comps).map { cal.startOfDay(for: $0) } ?? cal.startOfDay(for: now)
                     store.weekStart = startOfWeek
-                    let weekOfYear = cal.component(.weekOfYear, from: startOfWeek)
-                    store.payPeriodNumber = (weekOfYear / 2) + 1
+                    let bc = OddPayPeriodCalc.period(containing: startOfWeek)
+                    store.payPeriodNumber = bc.numberOdd
                 } label: {
                     Label("Jump to Current Pay Period", systemImage: "arrow.clockwise.circle")
                 }

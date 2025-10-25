@@ -163,20 +163,22 @@ struct SendView: View {
             }
             .onAppear {
                 // Prime from iCloud KVS if available
-                let kvs = NSUbiquitousKeyValueStore.default
-                if let s = kvs.string(forKey: "emailSubjectTemplate") { self.emailSubjectTemplate = s }
-                if let b = kvs.string(forKey: "emailBodyTemplate") { self.emailBodyTemplate = b }
-                kvs.synchronize()
+                if UbiquitousSettingsSync.isAvailable {
+                    let kvs = NSUbiquitousKeyValueStore.default
+                    if let s = kvs.string(forKey: "emailSubjectTemplate") { self.emailSubjectTemplate = s }
+                    if let b = kvs.string(forKey: "emailBodyTemplate") { self.emailBodyTemplate = b }
+                    kvs.synchronize()
 
-                // Observe external KVS changes to keep @AppStorage in sync
-                ubiObserver = NotificationCenter.default.addObserver(
-                    forName: NSUbiquitousKeyValueStore.didChangeExternallyNotification,
-                    object: kvs,
-                    queue: .main
-                ) { _ in
-                    let store = NSUbiquitousKeyValueStore.default
-                    if let s = store.string(forKey: "emailSubjectTemplate") { self.emailSubjectTemplate = s }
-                    if let b = store.string(forKey: "emailBodyTemplate") { self.emailBodyTemplate = b }
+                    // Observe external KVS changes to keep @AppStorage in sync
+                    ubiObserver = NotificationCenter.default.addObserver(
+                        forName: NSUbiquitousKeyValueStore.didChangeExternallyNotification,
+                        object: kvs,
+                        queue: .main
+                    ) { _ in
+                        let store = NSUbiquitousKeyValueStore.default
+                        if let s = store.string(forKey: "emailSubjectTemplate") { self.emailSubjectTemplate = s }
+                        if let b = store.string(forKey: "emailBodyTemplate") { self.emailBodyTemplate = b }
+                    }
                 }
 
                 // Ensure stat holidays are added for the current pay period in preview
@@ -303,11 +305,8 @@ struct SendView: View {
         if let subject = subjectTemplate { self.emailSubjectTemplate = subject }
         if let body = bodyTemplate { self.emailBodyTemplate = body }
 
-        // Mirror to iCloud Key-Value Store for cross-device sync
-        let kvs = NSUbiquitousKeyValueStore.default
-        if let subject = subjectTemplate { kvs.set(subject, forKey: "emailSubjectTemplate") }
-        if let body = bodyTemplate { kvs.set(body, forKey: "emailBodyTemplate") }
-        kvs.synchronize()
+        // Mirror to iCloud KVS if available via helper
+        UbiquitousSettingsSync.shared.pushEmail(recipients: recipients, subjectTemplate: subjectTemplate, bodyTemplate: bodyTemplate)
     }
     
     private func exportEntriesExcelURL() -> URL? {

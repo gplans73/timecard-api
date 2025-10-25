@@ -1,7 +1,7 @@
 import Foundation
 import CoreLocation
-import MapKit
 import Contacts
+import MapKit
 
 final class RegionLocator: NSObject, CLLocationManagerDelegate {
     static let shared = RegionLocator()
@@ -99,55 +99,36 @@ final class RegionLocator: NSObject, CLLocationManagerDelegate {
     }
 
     private func reverseGeocode(location: CLLocation) async throws -> (countryCode: String?, adminCode: String?) {
-        if #available(iOS 26.0, *) {
-            // Use MapKit's MKReverseGeocodingRequest for iOS 26+
-            guard let request = MKReverseGeocodingRequest(location: location) else {
-                throw CLError(.geocodeFoundNoResult)
-            }
-            let items = try await request.mapItems
-            if let item = items.first {
-                // Use MKMapItem.placemark to extract region codes (iOS 26+)
-                let placemark = item.placemark
-                let countryCode = placemark.countryCode
-                var adminCode: String? = placemark.administrativeArea
-                if adminCode?.isEmpty ?? true {
-                    adminCode = placemark.subAdministrativeArea
-                }
-                return (countryCode, adminCode)
-            } else {
-                throw CLError(.geocodeFoundNoResult)
-            }
-        } else if #available(iOS 15.0, *) {
-            // Use Core Location's CLGeocoder for iOS 15–25
+        if #available(iOS 15.0, *) {
+            // Use CLGeocoder's async API on iOS 15+
             let placemarks = try await CLGeocoder().reverseGeocodeLocation(location)
-            if let placemark = placemarks.first {
-                let countryCode = placemark.isoCountryCode
-                var adminCode: String? = placemark.administrativeArea
-                if adminCode?.isEmpty ?? true {
-                    adminCode = placemark.subAdministrativeArea
-                }
-                return (countryCode, adminCode)
-            } else {
+            guard let placemark = placemarks.first else {
                 throw CLError(.geocodeFoundNoResult)
             }
+            let countryCode = placemark.isoCountryCode
+            var adminCode: String? = placemark.administrativeArea
+            if adminCode?.isEmpty ?? true {
+                adminCode = placemark.subAdministrativeArea
+            }
+            return (countryCode, adminCode)
         } else {
-            // Legacy fallback for < iOS 15
+            // Use CLGeocoder's completion-handler API on iOS < 15
             return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<(String?, String?), Error>) in
                 CLGeocoder().reverseGeocodeLocation(location) { placemarks, error in
                     if let error = error {
                         continuation.resume(throwing: error)
                         return
                     }
-                    if let placemark = placemarks?.first {
-                        let countryCode = placemark.isoCountryCode
-                        var adminCode: String? = placemark.administrativeArea
-                        if adminCode?.isEmpty ?? true {
-                            adminCode = placemark.subAdministrativeArea
-                        }
-                        continuation.resume(returning: (countryCode, adminCode))
-                    } else {
+                    guard let placemark = placemarks?.first else {
                         continuation.resume(throwing: CLError(.geocodeFoundNoResult))
+                        return
                     }
+                    let countryCode = placemark.isoCountryCode
+                    var adminCode: String? = placemark.administrativeArea
+                    if adminCode?.isEmpty ?? true {
+                        adminCode = placemark.subAdministrativeArea
+                    }
+                    continuation.resume(returning: (countryCode, adminCode))
                 }
             }
         }

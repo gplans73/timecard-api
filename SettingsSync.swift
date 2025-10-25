@@ -7,12 +7,14 @@ final class SettingsSync {
     static let shared = SettingsSync()
 
     private var observation: AnyCancellable?
-    private let kvs = NSUbiquitousKeyValueStore.default
+    private var kvs: NSUbiquitousKeyValueStore { NSUbiquitousKeyValueStore.default }
 
     private init() {}
 
     /// Start syncing settings. Safe to call multiple times.
     func start() {
+        guard UbiquitousSettingsSync.isAvailable else { return }
+
         // Attempt an initial sync
         _ = kvs.synchronize()
 
