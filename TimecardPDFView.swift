@@ -58,7 +58,21 @@ struct TimecardPDFView: View {
         if category == .stat {
             return "Stat"
         }
+        // No prefix for job numbers - keep them as is
         return entry.jobNumber
+    }
+    
+    private func displayJobNumber(for entry: Entry) -> String {
+        // No prefix for job numbers in overtime table - keep them as is
+        return entry.jobNumber
+    }
+    
+    private func displayLaborCode(for entry: Entry) -> String {
+        // Add "N" prefix to labor code for night shift entries
+        if entry.isNightShift {
+            return "N\(entry.code)"
+        }
+        return entry.code
     }
 
     private func entriesFor(day: Date) -> [Entry] {
@@ -703,19 +717,19 @@ struct TimecardPDFView: View {
                         VStack(spacing: 0) {
                             Text("Summary Totals")
                                 .font(.system(size: 10, weight: .bold))
-                                .frame(width: 120, height: 20)
+                                .frame(width: 90, height: 20)
                                 .background(Color.gray.opacity(0.3))
                                 .overlay(Rectangle().stroke(Color.black, lineWidth: 1))
                             
-                            summaryRow("Regular Time:", payPeriodRegularPlusStatAlways(), width: 120)
-                            summaryRow("OT:", payPeriodCappedOT(), width: 120)
-                            summaryRow("DT:", payPeriodCappedDT(), width: 120)
-                            summaryRow("VP:", totalHoursForPayPeriod(type: .vacation), width: 120)
-                            summaryRow("NS:", totalHoursForPayPeriod(type: .night), width: 120)
-                            summaryRow("STAT:", totalHoursForPayPeriod(type: .stat), width: 120)
+                            summaryRow("Regular Time:", payPeriodRegularPlusStatAlways(), width: 90)
+                            summaryRow("OT:", payPeriodCappedOT(), width: 90)
+                            summaryRow("DT:", payPeriodCappedDT(), width: 90)
+                            summaryRow("VP:", totalHoursForPayPeriod(type: .vacation), width: 90)
+                            summaryRow("NS:", totalHoursForPayPeriod(type: .night), width: 90)
+                            summaryRow("STAT:", totalHoursForPayPeriod(type: .stat), width: 90)
                             if store.onCallEnabled {
-                                summaryRow("On Call:", payPeriodOnCallStipendAlways(), width: 120)
-                                summaryRow("# of On Call", payPeriodOnCallCountAlways(), width: 120)
+                                summaryRow("On Call:", payPeriodOnCallStipendAlways(), width: 90)
+                                summaryRow("# of On Call", payPeriodOnCallCountAlways(), width: 90)
                             }
                         }
                         .padding(.trailing, margin + summaryHorizontalShift) // shift left toward red-box area
@@ -735,7 +749,7 @@ struct TimecardPDFView: View {
         let dateColumnWidth: CGFloat = 60
         let laborCodeColumnWidth: CGFloat = 23
         let shiftHoursWidth: CGFloat = 30
-        let notesWidth: CGFloat = 120
+        let notesWidth: CGFloat = 115
         
         return VStack(spacing: 0) {
             // Header row
@@ -765,7 +779,7 @@ struct TimecardPDFView: View {
                 ForEach(0..<14, id: \.self) { colIndex in
                     // Get unique job/code combinations for the week including regular and night entries
                     let allEntries = weekDates.flatMap { regularEntriesFor(day: $0) + nightEntriesFor(day: $0) }
-                    let uniqueEntries = Array(Set(allEntries.map { "\(displayJobText(for: $0))|\($0.code)" }))
+                    let uniqueEntries = Array(Set(allEntries.map { "\(displayJobText(for: $0))|\(displayLaborCode(for: $0))" }))
                         .sorted()
                         .map { combo -> (jobDisplay: String, code: String) in
                             let parts = combo.split(separator: "|", omittingEmptySubsequences: false)
@@ -848,7 +862,7 @@ struct TimecardPDFView: View {
                     ForEach(0..<14, id: \.self) { colIndex in
                         // Get unique job/code combinations for the week including regular and night entries
                         let allEntries = weekDates.flatMap { regularEntriesFor(day: $0) + nightEntriesFor(day: $0) }
-                        let uniqueEntries = Array(Set(allEntries.map { "\(displayJobText(for: $0))|\($0.code)" }))
+                        let uniqueEntries = Array(Set(allEntries.map { "\(displayJobText(for: $0))|\(displayLaborCode(for: $0))" }))
                             .sorted()
                             .map { combo -> (jobDisplay: String, code: String) in
                                 let parts = combo.split(separator: "|", omittingEmptySubsequences: false)
@@ -862,30 +876,27 @@ struct TimecardPDFView: View {
                         
                         // Find matching entry for this day and column
                         let matchingEntry = dayEntries.first { entry in
-                            displayJobText(for: entry) == columnJobDisplay && entry.code == columnLabourCode
+                            displayJobText(for: entry) == columnJobDisplay && displayLaborCode(for: entry) == columnLabourCode
                         }
                         
-                        ZStack(alignment: .bottom) {
+                        ZStack(alignment: .center) {
                             if let entry = matchingEntry {
-                                // Display hours worked bottom-aligned
+                                // Display hours worked centered
                                 Text(formatHours(entry.hours))
-                                    .font(.system(size: 6))
+                                    .font(.system(size: 8))
                                     .lineLimit(1)
                                     .bold()
-                                    .padding(.bottom, 4)  // Changed from 2 to 4 per instructions
                             }
                         }
-                        .frame(width: laborCodeColumnWidth, height: 22, alignment: .bottom)
+                        .frame(width: laborCodeColumnWidth, height: 22)
                         .background(Color.white)
                         .overlay(Rectangle().stroke(Color.black, lineWidth: 1))
                     }
                     
                     // Shift hours column - display total hours for day (3)
-                    ZStack(alignment: .bottomTrailing) {
+                    ZStack(alignment: .center) {
                         Text(dayTotalHours > 0 ? formatHours(dayTotalHours) : "")
-                            .font(.system(size: 6))
-                            .padding(.trailing, 2)
-                            .padding(.bottom, 4)  // Changed from 2 to 4 per instructions
+                            .font(.system(size: 8))
                     }
                     .frame(width: shiftHoursWidth, height: 22)
                     .background(Color.white)
@@ -896,10 +907,10 @@ struct TimecardPDFView: View {
                         ZStack {
                             Color.white
                             HStack(spacing: 4) {
-                                Text("Offive use only table")
+                                Text("Office Use Only Table")
                                     .font(.system(size: 10, weight: .bold))
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.leading, 4)
+                                    .frame(maxWidth: .infinity, alignment: .center)
+                                    .padding(.leading, 0)
                             }
                         }
                         .frame(width: notesWidth, height: 22)
@@ -908,14 +919,13 @@ struct TimecardPDFView: View {
                         ZStack {
                             Color.white
                             HStack {
-                                Text("Regular Time:")
+                                Text("Reg Time:")
                                     .font(.system(size: 8))
-                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .frame(width: 70, alignment: .leading)
                                     .padding(.leading, 4)
                                 Text(totalRegularTableHoursForWeek())
                                     .font(.system(size: 8))
-                                    .frame(width: 35, alignment: .trailing)
-                                    .padding(.trailing, 4)
+                                    .frame(maxWidth: .infinity, alignment: .center)
                             }
                         }
                         .frame(width: notesWidth, height: 22)
@@ -926,12 +936,11 @@ struct TimecardPDFView: View {
                             HStack {
                                 Text("OT:")
                                     .font(.system(size: 8))
-                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .frame(width: 70, alignment: .leading)
                                     .padding(.leading, 4)
                                 Text(weeklyOTForNotes(weekDates: weekDates))
                                     .font(.system(size: 8))
-                                    .frame(width: 35, alignment: .trailing)
-                                    .padding(.trailing, 4)
+                                    .frame(maxWidth: .infinity, alignment: .center)
                             }
                         }
                         .frame(width: notesWidth, height: 22)
@@ -942,12 +951,11 @@ struct TimecardPDFView: View {
                             HStack {
                                 Text("DT:")
                                     .font(.system(size: 8))
-                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .frame(width: 70, alignment: .leading)
                                     .padding(.leading, 4)
                                 Text(weeklyDTForNotes(weekDates: weekDates))
                                     .font(.system(size: 8))
-                                    .frame(width: 35, alignment: .trailing)
-                                    .padding(.trailing, 4)
+                                    .frame(maxWidth: .infinity, alignment: .center)
                             }
                         }
                         .frame(width: notesWidth, height: 22)
@@ -958,12 +966,11 @@ struct TimecardPDFView: View {
                             HStack {
                                 Text("VP:")
                                     .font(.system(size: 8))
-                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .frame(width: 70, alignment: .leading)
                                     .padding(.leading, 4)
                                 Text(totalHoursFor(type: .vacation))
                                     .font(.system(size: 8))
-                                    .frame(width: 35, alignment: .trailing)
-                                    .padding(.trailing, 4)
+                                    .frame(maxWidth: .infinity, alignment: .center)
                             }
                         }
                         .frame(width: notesWidth, height: 22)
@@ -974,12 +981,11 @@ struct TimecardPDFView: View {
                             HStack {
                                 Text("NS:")
                                     .font(.system(size: 8))
-                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .frame(width: 70, alignment: .leading)
                                     .padding(.leading, 4)
                                 Text(totalHoursFor(type: .night))
                                     .font(.system(size: 8))
-                                    .frame(width: 35, alignment: .trailing)
-                                    .padding(.trailing, 4)
+                                    .frame(maxWidth: .infinity, alignment: .center)
                             }
                         }
                         .frame(width: notesWidth, height: 22)
@@ -990,12 +996,11 @@ struct TimecardPDFView: View {
                             HStack {
                                 Text("STAT:")
                                     .font(.system(size: 8))
-                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .frame(width: 70, alignment: .leading)
                                     .padding(.leading, 4)
                                 Text(totalHoursFor(type: .stat))
                                     .font(.system(size: 8))
-                                    .frame(width: 35, alignment: .trailing)
-                                    .padding(.trailing, 4)
+                                    .frame(maxWidth: .infinity, alignment: .center)
                             }
                         }
                         .frame(width: notesWidth, height: 22)
@@ -1024,7 +1029,7 @@ struct TimecardPDFView: View {
                 ForEach(0..<14, id: \.self) { colIndex in
                     // Get unique job/code combinations for the week including regular and night entries
                     let allEntries = weekDates.flatMap { regularEntriesFor(day: $0) + nightEntriesFor(day: $0) }
-                    let uniqueEntries = Array(Set(allEntries.map { "\(displayJobText(for: $0))|\($0.code)" }))
+                    let uniqueEntries = Array(Set(allEntries.map { "\(displayJobText(for: $0))|\(displayLaborCode(for: $0))" }))
                         .sorted()
                         .map { combo -> (jobDisplay: String, code: String) in
                             let parts = combo.split(separator: "|", omittingEmptySubsequences: false)
@@ -1041,17 +1046,15 @@ struct TimecardPDFView: View {
                         // ** Keep only regular entries here for totals (no change) **
                         let dayEntries = regularEntriesFor(day: date)
                         let matchingEntry = dayEntries.first { entry in
-                            displayJobText(for: entry) == columnJobDisplay && entry.code == columnLabourCode
+                            displayJobText(for: entry) == columnJobDisplay && displayLaborCode(for: entry) == columnLabourCode
                         }
                         return total + (matchingEntry?.hours ?? 0.0)
                     }
                     
-                    ZStack(alignment: .bottomTrailing) {
+                    ZStack(alignment: .center) {
                         Text(columnTotal > 0 ? formatHours(columnTotal) : "")
-                            .font(.system(size: 6))
+                            .font(.system(size: 8))
                             .bold()
-                            .padding(.trailing, 2)
-                            .padding(.bottom, 4)  // Changed from 2 to 4 per instructions
                     }
                     .frame(width: laborCodeColumnWidth, height: 18)
                     .background(Color.white)
@@ -1059,7 +1062,7 @@ struct TimecardPDFView: View {
                 }
                 
                 Text(totalRegularTableHoursForWeek())
-                    .font(.system(size: 6))
+                    .font(.system(size: 8))
                     .bold()
                     .frame(width: shiftHoursWidth, height: 18)
                     .background(Color.white)
@@ -1070,12 +1073,11 @@ struct TimecardPDFView: View {
                     HStack {
                         Text("On Call:")
                             .font(.system(size: 8))
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .frame(width: 70, alignment: .leading)
                             .padding(.leading, 4)
                         Text(weekOnCallAmountString())
                             .font(.system(size: 8))
-                            .frame(width: 35, alignment: .trailing)
-                            .padding(.trailing, 4)
+                            .frame(maxWidth: .infinity, alignment: .center)
                     }
                 }
                 .frame(width: notesWidth, height: 18)
@@ -1092,7 +1094,7 @@ struct TimecardPDFView: View {
                     .overlay(Rectangle().stroke(Color.black, lineWidth: 1))
                 ForEach(0..<14, id: \.self) { colIndex in
                     let allEntries = weekDates.flatMap { regularEntriesFor(day: $0) + nightEntriesFor(day: $0) }
-                    let uniqueEntries = Array(Set(allEntries.map { "\(displayJobText(for: $0))|\($0.code)" }))
+                    let uniqueEntries = Array(Set(allEntries.map { "\(displayJobText(for: $0))|\(displayLaborCode(for: $0))" }))
                         .sorted()
                         .map { combo -> (jobDisplay: String, code: String) in
                             let parts = combo.split(separator: "|", omittingEmptySubsequences: false)
@@ -1105,23 +1107,21 @@ struct TimecardPDFView: View {
                     let columnTotal = weekDates.reduce(0.0) { total, date in
                         let dayEntries = nightEntriesFor(day: date)
                         let matchingEntry = dayEntries.first { entry in
-                            displayJobText(for: entry) == columnJobDisplay && entry.code == columnLabourCode
+                            displayJobText(for: entry) == columnJobDisplay && displayLaborCode(for: entry) == columnLabourCode
                         }
                         return total + (matchingEntry?.hours ?? 0.0)
                     }
-                    ZStack(alignment: .bottomTrailing) {
+                    ZStack(alignment: .center) {
                         Text(columnTotal > 0 ? formatHours(columnTotal) : "")
-                            .font(.system(size: 6))
+                            .font(.system(size: 8))
                             .bold()
-                            .padding(.trailing, 2)
-                            .padding(.bottom, 4)  // Changed from 2 to 4 per instructions
                     }
                     .frame(width: laborCodeColumnWidth, height: 18)
                     .background(Color.white)
                     .overlay(Rectangle().stroke(Color.black, lineWidth: 1))
                 }
                 Text(totalHoursFor(type: .night))
-                    .font(.system(size: 6))
+                    .font(.system(size: 8))
                     .bold()
                     .frame(width: shiftHoursWidth, height: 18)
                     .background(Color.white)
@@ -1129,14 +1129,13 @@ struct TimecardPDFView: View {
                 ZStack {
                     Color.white
                     HStack {
-                        Text("# of On Call")
+                        Text("# On Call:")
                             .font(.system(size: 8))
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .frame(width: 70, alignment: .leading)
                             .padding(.leading, 4)
                         Text(weekOnCallCountString())
                             .font(.system(size: 8))
-                            .frame(width: 35, alignment: .trailing)
-                            .padding(.trailing, 4)
+                            .frame(maxWidth: .infinity, alignment: .center)
                     }
                 }
                 .frame(width: notesWidth, height: 18)
@@ -1150,8 +1149,8 @@ struct TimecardPDFView: View {
         let dayColumnWidth: CGFloat = 60
         let dateColumnWidth: CGFloat = 60
         let laborCodeColumnWidth: CGFloat = 23
-        let overtimeWidth: CGFloat = 30
-        let doubleTimeWidth: CGFloat = 30
+        let overtimeWidth: CGFloat = 40
+        let doubleTimeWidth: CGFloat = 40
         
         let policyMap = computeWeekOTDT(weekDates: weekDates)
         
@@ -1178,7 +1177,7 @@ struct TimecardPDFView: View {
                 ForEach(0..<8, id: \.self) { colIndex in
                     // Get unique job/code combinations for the week
                     let allOvertimeEntries = weekDates.flatMap { overtimeEntriesFor(day: $0) }
-                    let uniqueEntries = Array(Set(allOvertimeEntries.map { "\($0.jobNumber)|\($0.code)" }))
+                    let uniqueEntries = Array(Set(allOvertimeEntries.map { "\(displayJobNumber(for: $0))|\(displayLaborCode(for: $0))" }))
                         .sorted()
                         .map { combo -> (jobNumber: String, code: String) in
                             let parts = combo.split(separator: "|", omittingEmptySubsequences: false)
@@ -1211,12 +1210,13 @@ struct TimecardPDFView: View {
                 }
                 
                 // Overtime header
-                
                 Text("Overtime")
                     .font(.system(size: 7))
                     .bold()
+                    .lineLimit(1)
+                    .multilineTextAlignment(.center)
                     .rotationEffect(.degrees(-90))
-                    .frame(width: overtimeWidth, height: 60)
+                    .frame(width: overtimeWidth, height: 60, alignment: .center)
                     .background(Color.white)
                     .overlay(Rectangle().stroke(Color.black, lineWidth: 1))
                     .padding(.bottom, 0)
@@ -1225,8 +1225,11 @@ struct TimecardPDFView: View {
                 Text("Double Time")
                     .font(.system(size: 7))
                     .bold()
+                    .lineLimit(1)
+                    .multilineTextAlignment(.center)
+                    .fixedSize()  // ← Add this to prevent truncation
                     .rotationEffect(.degrees(-90))
-                    .frame(width: doubleTimeWidth, height: 60)
+                    .frame(width: doubleTimeWidth, height: 60, alignment: .center)
                     .background(Color.white)
                     .overlay(Rectangle().stroke(Color.black, lineWidth: 1))
             }
@@ -1267,7 +1270,7 @@ struct TimecardPDFView: View {
                     ForEach(0..<8, id: \.self) { colIndex in
                         // Get unique job/code combinations for the week
                         let allOvertimeEntries = weekDates.flatMap { overtimeEntriesFor(day: $0) }
-                        let uniqueEntries = Array(Set(allOvertimeEntries.map { "\($0.jobNumber)|\($0.code)" }))
+                        let uniqueEntries = Array(Set(allOvertimeEntries.map { "\(displayJobNumber(for: $0))|\(displayLaborCode(for: $0))" }))
                             .sorted()
                             .map { combo -> (jobNumber: String, code: String) in
                                 let parts = combo.split(separator: "|", omittingEmptySubsequences: false)
@@ -1281,41 +1284,36 @@ struct TimecardPDFView: View {
                         
                         // Find matching entry for this day and column
                         let matchingEntry = dayOvertimeEntries.first { entry in
-                            entry.jobNumber == columnJobNumber && entry.code == columnLabourCode
+                            displayJobNumber(for: entry) == columnJobNumber && displayLaborCode(for: entry) == columnLabourCode
                         }
                         
-                        ZStack(alignment: .bottom) {
+                        ZStack(alignment: .center) {
                             if let entry = matchingEntry {
-                                // Display hours worked bottom-aligned
+                                // Display hours worked centered
                                 Text(formatHours(entry.hours))
-                                    .font(.system(size: 6))
+                                    .font(.system(size: 8))
                                     .lineLimit(1)
                                     .bold()
-                                    .padding(.bottom, 4)  // Changed from 2 to 4 per instructions
                             }
                         }
-                        .frame(width: laborCodeColumnWidth, height: 22, alignment: .bottom)
+                        .frame(width: laborCodeColumnWidth, height: 22)
                         .background(Color.white)
                         .overlay(Rectangle().stroke(Color.black, lineWidth: 1))
                     }
                     
-                    // Overtime column - bottom-trailing
-                    ZStack(alignment: .bottomTrailing) {
+                    // Overtime column - centered
+                    ZStack(alignment: .center) {
                         Text(dayOvertimeHours > 0 ? formatHours(dayOvertimeHours) : "")
-                            .font(.system(size: 6))
-                            .padding(.trailing, 2)
-                            .padding(.bottom, 4)  // Changed from 2 to 4 per instructions
+                            .font(.system(size: 8))
                     }
                     .frame(width: overtimeWidth, height: 22)
                     .background(Color.white)
                     .overlay(Rectangle().stroke(Color.black, lineWidth: 1))
                     
-                    // Double-Time column - bottom-trailing
-                    ZStack(alignment: .bottomTrailing) {
+                    // Double-Time column - centered
+                    ZStack(alignment: .center) {
                         Text(dayDoubleTimeHours > 0 ? formatHours(dayDoubleTimeHours) : "")
-                            .font(.system(size: 6))
-                            .padding(.trailing, 2)
-                            .padding(.bottom, 4)  // Changed from 2 to 4 per instructions
+                            .font(.system(size: 8))
                     }
                     .frame(width: doubleTimeWidth, height: 22)
                     .background(Color.white)
@@ -1339,7 +1337,7 @@ struct TimecardPDFView: View {
                 ForEach(0..<8, id: \.self) { colIndex in
                     // Get unique job/code combinations for the week
                     let allOvertimeEntries = weekDates.flatMap { overtimeEntriesFor(day: $0) }
-                    let uniqueEntries = Array(Set(allOvertimeEntries.map { "\($0.jobNumber)|\($0.code)" }))
+                    let uniqueEntries = Array(Set(allOvertimeEntries.map { "\(displayJobNumber(for: $0))|\(displayLaborCode(for: $0))" }))
                         .sorted()
                         .map { combo -> (jobNumber: String, code: String) in
                             let parts = combo.split(separator: "|", omittingEmptySubsequences: false)
@@ -1355,17 +1353,15 @@ struct TimecardPDFView: View {
                     let columnTotal = weekDates.reduce(0.0) { total, date in
                         let dayEntries = overtimeEntriesFor(day: date)
                         let matchingEntry = dayEntries.first { entry in
-                            entry.jobNumber == columnJobNumber && entry.code == columnLabourCode
+                            displayJobNumber(for: entry) == columnJobNumber && displayLaborCode(for: entry) == columnLabourCode
                         }
                         return total + (matchingEntry?.hours ?? 0.0)
                     }
                     
-                    ZStack(alignment: .bottomTrailing) {
+                    ZStack(alignment: .center) {
                         Text(columnTotal > 0 ? formatHours(columnTotal) : "")
-                            .font(.system(size: 6))
+                            .font(.system(size: 8))
                             .bold()
-                            .padding(.trailing, 2)
-                            .padding(.bottom, 4)  // Changed from 2 to 4 per instructions
                     }
                     .frame(width: laborCodeColumnWidth, height: 18)
                     .background(Color.white)
@@ -1382,7 +1378,7 @@ struct TimecardPDFView: View {
                     return sum + cappedOT
                 }
                 Text(formatHours(weeklyOTTotal))
-                    .font(.system(size: 6))
+                    .font(.system(size: 8))
                     .bold()
                     .frame(width: overtimeWidth, height: 18)
                     .background(Color.white)
@@ -1398,7 +1394,7 @@ struct TimecardPDFView: View {
                     return sum + combinedDT + overflowToDT
                 }
                 Text(formatHours(weeklyDTTotal))
-                    .font(.system(size: 6))
+                    .font(.system(size: 8))
                     .bold()
                     .frame(width: doubleTimeWidth, height: 18)
                     .background(Color.white)
@@ -1447,12 +1443,11 @@ private func summaryRow(_ label: String, _ value: String, width: CGFloat) -> som
     HStack(spacing: 0) {
         Text(label)
             .font(.system(size: 8))
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(width: 60, alignment: .leading)
             .padding(.leading, 4)
         Text(value)
             .font(.system(size: 8))
-            .frame(width: 35, alignment: .trailing)
-            .padding(.trailing, 4)
+            .frame(maxWidth: .infinity, alignment: .center)
     }
     .frame(width: width, height: 16)
     .background(Color.white)
@@ -1462,4 +1457,7 @@ private func summaryRow(_ label: String, _ value: String, width: CGFloat) -> som
     TimecardPDFView()
         .environmentObject(TimecardStore.sampleStore)
 }
+
+
+
 
