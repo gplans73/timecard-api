@@ -1,0 +1,490 @@
+package main
+
+import (
+    "bytes"
+    "embed"
+    "encoding/json"
+    "fmt"
+    "log"
+    "net/http"
+    "os"
+    "sort"
+    "strings"
+    "time"
+
+    "github.com/xuri/excelize/v2"
+)
+
+//go:embed template.xlsx
+var templateFS embed.FS
+
+type EntryModel struct {
+    ID           string  `json:"id"`
+    Date         string  `json:"date"`
+    JobNumber    string  `json:"jobNumber"`
+    Code         string  `json:"code"`
+    Hours        float64 `json:"hours"`
+    Notes        string  `json:"notes"`
+    IsOvertime   bool    `json:"isOvertime"`
+    IsNightShift bool    `json:"isNightShift"`
+}
+
+type EmployeeInfo struct {
+    Name  string `json:"name"`
+    Email string `json:"email,omitempty"`
+}
+
+type PayPeriodInfo struct {
+    WeekStart  string `json:"weekStart"`
+    WeekEnd    string `json:"weekEnd"`
+    WeekNumber int    `json:"weekNumber"`
+    TotalWeeks int    `json:"totalWeeks"`
+    PPNumber   int    `json:"ppNumber"`
+    Year       int    `json:"year"`
+}
+
+type TimecardRequest struct {
+    Employee  EmployeeInfo  `json:"employee"`
+    Entries   []EntryModel  `json:"entries"`
+    PayPeriod PayPeriodInfo `json:"payPeriod"`
+}
+
+func parseISO(d string) (time.Time, error) {
+    formats := []string{
+        time.RFC3339,
+        "2006-01-02T15:04:05Z",
+        "2006-01-02",
+        "06-01-02",
+        "2006/01/02",
+        "01/02/2006",
+        "02-01-2006",
+        "02/01/2006",
+    }
+    for _, f := range formats {
+        if t, err := time.ParseInLocation(f, d, time.Local); err == nil {
+            return t, nil
+        }
+    }
+    return time.Time{}, fmt.Errorf("bad date: %q", d)
+}
+
+func enableCORS(w http.ResponseWriter) {
+    w.Header().Set("Access-Control-Allow-Origin", "*")
+    w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+    w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+}
+
+// fillWeekSheet populates a single week's sheet with data
+func fillWeekSheet(f *excelize.File, weekNum int, weekStart, weekEnd time.Time, entries []EntryModel) error {
+    sheetName := fmt.Sprintf("Week %d", weekNum)
+    cell := func(col string, row int) string { return fmt.Sprintf("%s%d", col, row) }
+    
+    log.Printf("Filling %s with %d entries from %s to %s", 
+        sheetName, len(entries), weekStart.Format("2006-01-02"), weekEnd.Format("2006-01-02"))
+    
+    // FIXED: Set week-specific fields with consistent date format (MM-DD-YY)
+    _ = f.SetCellValue(sheetName, "B4", weekStart.Format("01-02-06"))
+    _ = f.SetCellValue(sheetName, "AJ4", fmt.Sprintf("Week #%d", weekNum))
+    
+    // Create styles
+    dateStyle, _ := f.NewStyle(&excelize.Style{
+        Alignment: &excelize.Alignment{
+            Horizontal: "center",
+            Vertical:   "center",
+        },
+        Border: []excelize.Border{
+            {Type: "left", Color: "000000", Style: 1},
+            {Type: "top", Color: "000000", Style: 1},
+            {Type: "right", Color: "000000", Style: 1},
+            {Type: "bottom", Color: "000000", Style: 1},
+        },
+    })
+    
+    dataStyle, _ := f.NewStyle(&excelize.Style{
+        Alignment: &excelize.Alignment{
+            Horizontal: "center",
+            Vertical:   "center",
+        },
+        Border: []excelize.Border{
+            {Type: "left", Color: "000000", Style: 1},
+            {Type: "top", Color: "000000", Style: 1},
+            {Type: "right", Color: "000000", Style: 1},
+            {Type: "bottom", Color: "000000", Style: 1},
+        },
+    })
+    
+    _ = f.SetCellStyle(sheetName, "B4", "B4", dateStyle)
+    
+    // Column arrays
+    regularJobCols := []string{"D", "F", "H", "J", "L", "N", "P", "R", "T", "V", "X", "Z", "AB", "AD", "AF", "AH"}
+    regularCodeCols := []string{"C", "E", "G", "I", "K", "M", "O", "Q", "S", "U", "W", "Y", "AA", "AC", "AE", "AG"}
+    regularDataCols := regularCodeCols // Write to left cell of merged pairs
+    
+    // FIXED: Build separate job lists for regular and overtime sections
+    regularJobSet := make(map[string]struct{})
+    overtimeJobSet := make(map[string]struct{})
+    entryMap := make(map[int][]EntryModel)
+    
+    sort.Slice(entries, func(i, j int) bool {
+        ti, _ := parseISO(entries[i].Date)
+        tj, _ := parseISO(entries[j].Date)
+        return ti.Before(tj)
+    })
+    
+    for _, e := range entries {
+        dt, err := parseISO(e.Date)
+        if err != nil {
+            continue
+        }
+        dayIdx := int(dt.Sub(weekStart).Hours()/24 + 0.0001)
+        if dayIdx < 0 || dayIdx > 6 {
+            log.Printf("Entry date %s outside week range, skipping", dt.Format("2006-01-02"))
+            continue
+        }
+        entryMap[dayIdx] = append(entryMap[dayIdx], e)
+        
+        k := e.JobNumber + "-" + e.Code
+        if e.IsOvertime {
+            overtimeJobSet[k] = struct{}{}
+        } else {
+            regularJobSet[k] = struct{}{}
+        }
+    }
+    
+    // Create sorted job lists
+    var regularJobs []string
+    for k := range regularJobSet {
+        regularJobs = append(regularJobs, k)
+    }
+    sort.Strings(regularJobs)
+    
+    var overtimeJobs []string
+    for k := range overtimeJobSet {
+        overtimeJobs = append(overtimeJobs, k)
+    }
+    sort.Strings(overtimeJobs)
+    
+    log.Printf("Week %d has %d regular jobs: %v", weekNum, len(regularJobs), regularJobs)
+    log.Printf("Week %d has %d overtime jobs: %v", weekNum, len(overtimeJobs), overtimeJobs)
+    
+    // Write job headers for REGULAR section (row 4)
+    for i, key := range regularJobs {
+        if i >= len(regularJobCols) {
+            log.Printf("Warning: More than %d jobs, truncating", len(regularJobCols))
+            break
+        }
+        parts := strings.SplitN(key, "-", 2)
+        job, code := parts[0], ""
+        if len(parts) > 1 {
+            code = parts[1]
+        }
+        _ = f.SetCellValue(sheetName, cell(regularCodeCols[i], 4), code)
+        _ = f.SetCellValue(sheetName, cell(regularJobCols[i], 4), job)
+        log.Printf("Set regular headers: %s at %s, %s at %s", code, regularCodeCols[i]+"4", job, regularJobCols[i]+"4")
+    }
+    
+    // FIXED: Only write job headers for OVERTIME section if there are overtime entries (row 15)
+    if len(overtimeJobs) > 0 {
+        for i, key := range overtimeJobs {
+            if i >= len(regularJobCols) {
+                break
+            }
+            parts := strings.SplitN(key, "-", 2)
+            job, code := parts[0], ""
+            if len(parts) > 1 {
+                code = parts[1]
+            }
+            _ = f.SetCellValue(sheetName, cell(regularCodeCols[i], 15), code)
+            _ = f.SetCellValue(sheetName, cell(regularJobCols[i], 15), job)
+            log.Printf("Set overtime headers: %s at %s, %s at %s", code, regularCodeCols[i]+"15", job, regularJobCols[i]+"15")
+        }
+    }
+    
+    // Process regular time data (rows 5-11)
+    totalRegularPerJob := make(map[string]float64)
+    totalNightPerJob := make(map[string]float64)
+    
+    for day := 0; day < 7; day++ {
+        row := 5 + day
+        dayDate := weekStart.AddDate(0, 0, day)
+        // FIXED: Use consistent date format (MM-DD-YY)
+        _ = f.SetCellValue(sheetName, cell("B", row), dayDate.Format("01-02-06"))
+        _ = f.SetCellStyle(sheetName, cell("B", row), cell("B", row), dateStyle)
+        
+        reg := make(map[string]float64)
+        night := make(map[string]float64)
+        
+        for _, e := range entryMap[day] {
+            if e.IsOvertime {
+                continue
+            }
+            k := e.JobNumber + "-" + e.Code
+            reg[k] += e.Hours
+            totalRegularPerJob[k] += e.Hours
+            if e.IsNightShift {
+                night[k] += e.Hours
+                totalNightPerJob[k] += e.Hours
+            }
+        }
+        
+        var shiftSum float64
+        for j, k := range regularJobs {
+            if j >= len(regularDataCols) {
+                break
+            }
+            if hrs := reg[k]; hrs > 0 {
+                cellAddr := cell(regularDataCols[j], row)
+                _ = f.SetCellValue(sheetName, cellAddr, hrs)
+                _ = f.SetCellStyle(sheetName, cellAddr, cellAddr, dataStyle)
+                shiftSum += hrs
+            }
+        }
+        
+        if shiftSum > 0 {
+            cellAddr := cell("AI", row)
+            _ = f.SetCellValue(sheetName, cellAddr, shiftSum)
+            _ = f.SetCellStyle(sheetName, cellAddr, cellAddr, dataStyle)
+        }
+    }
+    
+    // Write totals (rows 12, 13)
+    for j, k := range regularJobs {
+        if j >= len(regularDataCols) {
+            break
+        }
+        if tot := totalRegularPerJob[k]; tot > 0 {
+            cellAddr := cell(regularDataCols[j], 12)
+            _ = f.SetCellValue(sheetName, cellAddr, tot)
+            _ = f.SetCellStyle(sheetName, cellAddr, cellAddr, dataStyle)
+        }
+        if nt := totalNightPerJob[k]; nt > 0 {
+            cellAddr := cell(regularDataCols[j], 13)
+            _ = f.SetCellValue(sheetName, cellAddr, nt)
+            _ = f.SetCellStyle(sheetName, cellAddr, cellAddr, dataStyle)
+        }
+    }
+    
+    // Process overtime section (rows 16-22)
+    totalOTPerJob := make(map[string]float64)
+    
+    for day := 0; day < 7; day++ {
+        row := 16 + day
+        dayDate := weekStart.AddDate(0, 0, day)
+        // FIXED: Use consistent date format (MM-DD-YY)
+        _ = f.SetCellValue(sheetName, cell("B", row), dayDate.Format("01-02-06"))
+        _ = f.SetCellStyle(sheetName, cell("B", row), cell("B", row), dateStyle)
+        
+        ot := make(map[string]float64)
+        
+        for _, e := range entryMap[day] {
+            if !e.IsOvertime {
+                continue
+            }
+            k := e.JobNumber + "-" + e.Code
+            ot[k] += e.Hours
+            totalOTPerJob[k] += e.Hours
+        }
+        
+        // FIXED: Only iterate over overtime jobs, not all jobs
+        for j, k := range overtimeJobs {
+            if j >= len(regularDataCols) {
+                break
+            }
+            if hrs := ot[k]; hrs > 0 {
+                cellAddr := cell(regularDataCols[j], row)
+                _ = f.SetCellValue(sheetName, cellAddr, hrs)
+                _ = f.SetCellStyle(sheetName, cellAddr, cellAddr, dataStyle)
+            }
+        }
+    }
+    
+    // Write OT totals (row 23) - FIXED: Only for overtime jobs
+    for j, k := range overtimeJobs {
+        if j >= len(regularDataCols) {
+            break
+        }
+        if tot := totalOTPerJob[k]; tot > 0 {
+            cellAddr := cell(regularDataCols[j], 23)
+            _ = f.SetCellValue(sheetName, cellAddr, tot)
+            _ = f.SetCellStyle(sheetName, cellAddr, cellAddr, dataStyle)
+        }
+    }
+    
+    log.Printf("Week %d completed: Regular=%.2f, Night=%.2f, OT=%.2f", 
+        weekNum, sumMap(totalRegularPerJob), sumMap(totalNightPerJob), sumMap(totalOTPerJob))
+    
+    return nil
+}
+
+func sumMap(m map[string]float64) float64 {
+    var sum float64
+    for _, v := range m {
+        sum += v
+    }
+    return sum
+}
+
+func generateTimecardHandler(w http.ResponseWriter, r *http.Request) {
+    enableCORS(w)
+    if r.Method == http.MethodOptions {
+        w.WriteHeader(http.StatusNoContent)
+        return
+    }
+    if r.Method != http.MethodPost {
+        http.Error(w, "use POST", http.StatusMethodNotAllowed)
+        return
+    }
+
+    var req TimecardRequest
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        log.Printf("JSON decode error: %v", err)
+        http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+        return
+    }
+    if len(req.Entries) == 0 {
+        http.Error(w, "no entries provided", http.StatusBadRequest)
+        return
+    }
+
+    // Parse date ranges
+    // The API can work in two modes:
+    // 1. Single week mode: weekNumber specified, weekStart/weekEnd define one week
+    // 2. Full pay period mode: Send all entries, API splits into Week 1 and Week 2
+    
+    ws, err := parseISO(req.PayPeriod.WeekStart)
+    if err != nil {
+        http.Error(w, "bad weekStart", http.StatusBadRequest)
+        return
+    }
+    we, err := parseISO(req.PayPeriod.WeekEnd)
+    if err != nil {
+        http.Error(w, "bad weekEnd", http.StatusBadRequest)
+        return
+    }
+    
+    // Calculate if this spans two weeks (14 days = full pay period)
+    daysDiff := int(we.Sub(ws).Hours() / 24)
+    isFullPayPeriod := daysDiff >= 13 // 13-14 days = 2 weeks
+    
+    log.Printf("Date range: %s to %s (%d days)", ws.Format("2006-01-02"), we.Format("2006-01-02"), daysDiff)
+    log.Printf("Full pay period mode: %v", isFullPayPeriod)
+    year := req.PayPeriod.Year
+    if year == 0 {
+        year = ws.Year()
+    }
+
+    // Load template
+    raw, err := templateFS.ReadFile("template.xlsx")
+    if err != nil {
+        http.Error(w, "template read: "+err.Error(), http.StatusInternalServerError)
+        return
+    }
+    f, err := excelize.OpenReader(bytes.NewReader(raw))
+    if err != nil {
+        http.Error(w, "open xlsx: "+err.Error(), http.StatusInternalServerError)
+        return
+    }
+    defer f.Close()
+
+    // Write employee information to Week 1 (this feeds Week 2 via formulas)
+    if req.Employee.Name != "" {
+        _ = f.SetCellValue("Week 1", "M2", req.Employee.Name)
+        log.Printf("Set employee name in Week 1: %s", req.Employee.Name)
+    } else {
+        log.Printf("WARNING: Employee name is empty!")
+    }
+    if req.PayPeriod.PPNumber > 0 {
+        _ = f.SetCellValue("Week 1", "AJ2", req.PayPeriod.PPNumber)
+        log.Printf("Set PP# in Week 1: %d", req.PayPeriod.PPNumber)
+    } else {
+        log.Printf("WARNING: PP# is 0 or not set!")
+    }
+    _ = f.SetCellValue("Week 1", "AJ3", year)
+    log.Printf("Set Year in Week 1: %d", year)
+    
+    // Split entries into Week 1 and Week 2
+    var week1Entries, week2Entries []EntryModel
+    week1End := ws.AddDate(0, 0, 6) // Week 1 is 7 days (day 0-6)
+    week2Start := ws.AddDate(0, 0, 7) // Week 2 starts on day 7
+    
+    for _, e := range req.Entries {
+        dt, err := parseISO(e.Date)
+        if err != nil {
+            log.Printf("Could not parse date '%s': %v", e.Date, err)
+            continue
+        }
+        
+        // Check which week this entry belongs to
+        if !dt.Before(ws) && !dt.After(week1End) {
+            // Week 1: weekStart to weekStart+6 days
+            week1Entries = append(week1Entries, e)
+            log.Printf("Entry %s assigned to Week 1", dt.Format("2006-01-02"))
+        } else if !dt.Before(week2Start) && !dt.After(we) {
+            // Week 2: weekStart+7 days to weekEnd
+            week2Entries = append(week2Entries, e)
+            log.Printf("Entry %s assigned to Week 2", dt.Format("2006-01-02"))
+        } else {
+            log.Printf("Entry %s outside date range, skipping", dt.Format("2006-01-02"))
+        }
+    }
+    
+    log.Printf("Split entries: Week 1=%d, Week 2=%d", len(week1Entries), len(week2Entries))
+    
+    // Process Week 1 if it has entries
+    if len(week1Entries) > 0 {
+        log.Printf("\n=== Processing Week 1 ===")
+        if err := fillWeekSheet(f, 1, ws, week1End, week1Entries); err != nil {
+            log.Printf("Error processing Week 1: %v", err)
+            http.Error(w, fmt.Sprintf("error processing Week 1: %v", err), http.StatusInternalServerError)
+            return
+        }
+    }
+    
+    // Process Week 2 if it has entries
+    if len(week2Entries) > 0 {
+        log.Printf("\n=== Processing Week 2 ===")
+        if err := fillWeekSheet(f, 2, week2Start, we, week2Entries); err != nil {
+            log.Printf("Error processing Week 2: %v", err)
+            http.Error(w, fmt.Sprintf("error processing Week 2: %v", err), http.StatusInternalServerError)
+            return
+        }
+    }
+    
+    // If no entries for either week, log warning
+    if len(week1Entries) == 0 && len(week2Entries) == 0 {
+        log.Printf("WARNING: No entries found within the date range %s to %s", 
+            ws.Format("2006-01-02"), we.Format("2006-01-02"))
+    }
+    
+    // Return the Excel file
+    buf, err := f.WriteToBuffer()
+    if err != nil {
+        http.Error(w, "write xlsx: "+err.Error(), http.StatusInternalServerError)
+        return
+    }
+    
+    log.Printf("Successfully generated Excel file with %d bytes", buf.Len())
+    
+    w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    w.Header().Set("Content-Disposition", `attachment; filename="Timecard.xlsx"`)
+    w.Header().Set("Content-Length", fmt.Sprintf("%d", buf.Len()))
+    w.WriteHeader(http.StatusOK)
+    _, _ = w.Write(buf.Bytes())
+}
+func healthHandler(w http.ResponseWriter, r *http.Request) {
+    enableCORS(w)
+    w.WriteHeader(http.StatusOK)
+    _, _ = w.Write([]byte("OK"))
+}
+
+func main() {
+    http.HandleFunc("/api/generate-timecard", generateTimecardHandler)
+    http.HandleFunc("/health", healthHandler)
+
+    port := os.Getenv("PORT")
+    if port == "" {
+        port = "8080"
+    }
+    log.Printf("Server starting on port %s", port)
+    log.Fatal(http.ListenAndServe(":"+port, nil))
+}

@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: timecard-excel-api
+    env: go
+    plan: free
+    buildCommand: go build -o main .
+    startCommand: ./main
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: 587
+      - key: FROM_NAME
+        value: Timecard System
+      # These should be set as secret environment variables in Render dashboard:
+      # SMTP_USER (your email)
+      # SMTP_PASSWORD (your app password)
+      # FROM_EMAIL (your from email)
+    healthCheckPath: /health

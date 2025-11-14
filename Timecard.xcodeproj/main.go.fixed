@@ -1,0 +1,8 @@
+// This file is intentionally redirected to main.go for all logic.
+// 
+// Note: This file is present to avoid missing file errors.
+// All implementations should use main.go.
+//
+//go:build ignore
+
+package main
