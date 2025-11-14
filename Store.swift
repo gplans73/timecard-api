@@ -1,18 +1,69 @@
+// US Overtime reference used in-app: https://clockify.me/learn/business-management/overtime-laws/
 import Foundation
 import SwiftUI
 import Combine
 import SwiftData
 
 // MARK: - Country and Province Enums
-enum Country: String, CaseIterable {
+enum TimecardCountry: String, CaseIterable {
     case canada = "Canada"
     case unitedStates = "United States"
     
     var displayName: String { rawValue }
 }
 
-enum USState: String, CaseIterable {
+enum TimecardUSState: String, CaseIterable {
+    case alabama = "Alabama"
+    case alaska = "Alaska"
+    case arizona = "Arizona"
+    case arkansas = "Arkansas"
+    case california = "California"
+    case colorado = "Colorado"
+    case connecticut = "Connecticut"
+    case delaware = "Delaware"
+    case florida = "Florida"
+    case georgia = "Georgia"
+    case hawaii = "Hawaii"
+    case idaho = "Idaho"
+    case illinois = "Illinois"
+    case indiana = "Indiana"
+    case iowa = "Iowa"
+    case kansas = "Kansas"
+    case kentucky = "Kentucky"
+    case louisiana = "Louisiana"
+    case maine = "Maine"
+    case maryland = "Maryland"
+    case massachusetts = "Massachusetts"
+    case michigan = "Michigan"
+    case minnesota = "Minnesota"
+    case mississippi = "Mississippi"
+    case missouri = "Missouri"
+    case montana = "Montana"
+    case nebraska = "Nebraska"
+    case nevada = "Nevada"
+    case newHampshire = "New Hampshire"
+    case newJersey = "New Jersey"
     case newMexico = "New Mexico"
+    case newYork = "New York"
+    case northCarolina = "North Carolina"
+    case northDakota = "North Dakota"
+    case ohio = "Ohio"
+    case oklahoma = "Oklahoma"
+    case oregon = "Oregon"
+    case pennsylvania = "Pennsylvania"
+    case rhodeIsland = "Rhode Island"
+    case southCarolina = "South Carolina"
+    case southDakota = "South Dakota"
+    case tennessee = "Tennessee"
+    case texas = "Texas"
+    case utah = "Utah"
+    case vermont = "Vermont"
+    case virginia = "Virginia"
+    case washington = "Washington"
+    case westVirginia = "West Virginia"
+    case wisconsin = "Wisconsin"
+    case wyoming = "Wyoming"
+    case districtOfColumbia = "District of Columbia"
     
     var displayName: String { rawValue }
 }
@@ -57,14 +108,22 @@ struct StatHoliday: Identifiable, Codable {
 
 // MARK: - HolidayManager Class
 class HolidayManager: ObservableObject {
-    @Published var selectedCountry: Country = .canada
-    @Published var selectedProvince: Province = .britishColumbia
+    @Published var selectedCountry: TimecardCountry = .canada { didSet { NotificationCenter.default.post(name: .regionDidChange, object: nil) } }
+    @Published var selectedProvince: Province = .britishColumbia { didSet { if selectedCountry == .canada { NotificationCenter.default.post(name: .regionDidChange, object: nil) } } }
     
     @Published var autoDetectRegion: Bool = false
-    @Published var selectedState: USState = .newMexico
+    @Published var selectedState: TimecardUSState = .newMexico { didSet { if selectedCountry == .unitedStates { NotificationCenter.default.post(name: .regionDidChange, object: nil) } } }
     
     // Debug logging toggle for holiday networking/decoding
     @AppStorage("holidayDebugLogging") var holidayDebugLogging: Bool = false
+    
+    // Source reference for US overtime rules
+    private let usOvertimeSource: String = "https://clockify.me/learn/business-management/overtime-laws/"
+    
+    /// Appends the US overtime source attribution to a block of text.
+    private func withUSSource(_ text: String) -> String {
+        return text + "\n\nSource: " + usOvertimeSource
+    }
     
     // Human-readable region and cache status for Settings UI
     var regionStatusLine: String {
@@ -92,9 +151,10 @@ class HolidayManager: ObservableObject {
             if selectedCountry == .unitedStates {
                 // Use common USPS-style abbreviations when possible
                 let name = selectedState.displayName
-                // Simple mapping for the one we currently support
-                if name == "New Mexico" { return "NM" }
-                return name
+                let abbrevMap: [String: String] = [
+                    "Alabama":"AL","Alaska":"AK","Arizona":"AZ","Arkansas":"AR","California":"CA","Colorado":"CO","Connecticut":"CT","Delaware":"DE","Florida":"FL","Georgia":"GA","Hawaii":"HI","Idaho":"ID","Illinois":"IL","Indiana":"IN","Iowa":"IA","Kansas":"KS","Kentucky":"KY","Louisiana":"LA","Maine":"ME","Maryland":"MD","Massachusetts":"MA","Michigan":"MI","Minnesota":"MN","Mississippi":"MS","Missouri":"MO","Montana":"MT","Nebraska":"NE","Nevada":"NV","New Hampshire":"NH","New Jersey":"NJ","New Mexico":"NM","New York":"NY","North Carolina":"NC","North Dakota":"ND","Ohio":"OH","Oklahoma":"OK","Oregon":"OR","Pennsylvania":"PA","Rhode Island":"RI","South Carolina":"SC","South Dakota":"SD","Tennessee":"TN","Texas":"TX","Utah":"UT","Vermont":"VT","Virginia":"VA","Washington":"WA","West Virginia":"WV","Wisconsin":"WI","Wyoming":"WY","District of Columbia":"DC"
+                ]
+                return abbrevMap[name] ?? name
             } else {
                 let name = selectedProvince.displayName
                 if name == "British Columbia" { return "BC" }
@@ -120,6 +180,66 @@ class HolidayManager: ObservableObject {
         return "Cached: none"
     }
     
+    // MARK: - Overtime Rules Explanation
+    var overtimeRulesExplanation: String {
+        switch selectedCountry {
+        case .canada:
+            switch selectedProvince {
+            case .alberta:
+                return "In Alberta, regular working hours are calculated as the first 8 hours worked in any given day or the first 44 hours worked in any workweek, whichever calculation provides greater overtime compensation to the employee.\n\n• Regular Time (1.0x rate): First 8 hours/day OR first 44 hours/week\n• Time-and-a-Half (1.5x rate): Hours beyond 8/day OR beyond 44/week\n• Double Time (2.0x rate): Not standard for daily overtime. After a second consecutive day of rest, double time applies.\n\nPay Rate Breakdown:\n- If your hourly rate is $30/hour:\n  • Regular time: $30.00/hour\n  • Overtime: $45.00/hour (1.5x)\n  • Double time: $60.00/hour (2.0x, special circumstances)\n\nExample: Working 10 hours/day for 5 days = 40 regular hours ($30/hr) + 10 overtime hours ($45/hr). Alberta's unique 44-hour weekly threshold provides additional protection compared to standard 40-hour jurisdictions."
+                
+            case .britishColumbia:
+                return "In British Columbia, regular working hours are defined as the first 8 hours worked in any given day, with additional weekly protections.\n\n• Regular Time (1.0x rate): First 8 hours per day\n• Time-and-a-Half (1.5x rate): Hours 8.01-12.00 per day OR hours beyond 40/week\n• Double Time (2.0x rate): After 12 hours/day, regardless of weekly total\n\nPay Rate Breakdown:\n- If your hourly rate is $30/hour:\n  • Regular time: $30.00/hour\n  • Overtime: $45.00/hour (1.5x)\n  • Double time: $60.00/hour (2.0x)\n\nExample: Working a 14-hour day = 8 regular hours ($30/hr) + 4 overtime hours ($45/hr) + 2 double time hours ($60/hr). BC's dual daily/weekly system ensures you receive whichever calculation provides more overtime compensation."
+                
+            case .ontario:
+                return "In Ontario, regular working hours are calculated as the first 44 hours worked in any workweek with no daily overtime requirements.\n\n• Regular Time (1.0x rate): First 44 hours per week\n• Time-and-a-Half (1.5x rate): All hours beyond 44 per week\n• Double Time (2.0x rate): Not standard under provincial law\n\nPay Rate Breakdown:\n- If your hourly rate is $30/hour:\n  • Regular time: $30.00/hour\n  • Overtime: $45.00/hour (1.5x)\n\nExample: Working 50 hours in a week = 44 regular hours ($30/hr) + 6 overtime hours ($45/hr), regardless of daily distribution. Ontario's weekly-only system allows flexible daily scheduling."
+                
+            case .quebec:
+                return "In Quebec, regular working hours follow a weekly calculation under the Act Respecting Labour Standards.\n\n• Regular Time (1.0x rate): First 40 hours per week\n• Time-and-a-Half (1.5x rate): All hours beyond 40 per week\n• Double Time (2.0x rate): Not standard under provincial law\n\nPay Rate Breakdown:\n- If your hourly rate is $30/hour:\n  • Regular time: $30.00/hour\n  • Overtime: $45.00/hour (1.5x)\n\nExample: Working 45 hours in a week = 40 regular hours ($30/hr) + 5 overtime hours ($45/hr). Quebec's system allows flexible daily scheduling within the 40-hour weekly limit."
+                
+            case .manitoba:
+                return "In Manitoba, regular working hours are calculated with both daily and weekly protections.\n\n• Regular Time (1.0x rate): First 8 hours per day\n• Time-and-a-Half (1.5x rate): Hours beyond 8/day OR beyond 40/week\n• Double Time (2.0x rate): Not standard under provincial law\n\nPay Rate Breakdown:\n- If your hourly rate is $30/hour:\n  • Regular time: $30.00/hour\n  • Overtime: $45.00/hour (1.5x)\n\nExample: Working 10 hours/day for 4 days = 32 regular hours + 8 overtime hours. Manitoba uses whichever calculation (daily or weekly) provides more overtime compensation."
+                
+            case .newBrunswick:
+                return "In New Brunswick, regular working hours are calculated on a weekly basis.\n\n• Regular Time (1.0x rate): First 44 hours per week\n• Time-and-a-Half (1.5x rate): All hours beyond 44 per week\n• Double Time (2.0x rate): Not standard under provincial law\n\nPay Rate Breakdown:\n- If your hourly rate is $30/hour:\n  • Regular time: $30.00/hour\n  • Overtime: $45.00/hour (1.5x)\n\nExample: Working 50 hours in a week = 44 regular hours ($30/hr) + 6 overtime hours ($45/hr). New Brunswick's 44-hour threshold allows more flexible scheduling than 40-hour provinces."
+                
+            case .newfoundlandAndLabrador:
+                return "In Newfoundland and Labrador, regular working hours follow a standard weekly calculation.\n\n• Regular Time (1.0x rate): First 40 hours per week\n• Time-and-a-Half (1.5x rate): All hours beyond 40 per week\n• Double Time (2.0x rate): Not standard under provincial law\n\nPay Rate Breakdown:\n- If your hourly rate is $30/hour:\n  • Regular time: $30.00/hour\n  • Overtime: $45.00/hour (1.5x)\n\nExample: Working 45 hours in a week = 40 regular hours ($30/hr) + 5 overtime hours ($45/hr). Standard 40-hour weekly threshold with flexible daily scheduling."
+                
+            case .novaScotia:
+                return "In Nova Scotia, regular working hours are calculated with a higher weekly threshold.\n\n• Regular Time (1.0x rate): First 48 hours per week\n• Time-and-a-Half (1.5x rate): All hours beyond 48 per week (overtime at least minimum wage)\n• Double Time (2.0x rate): Not standard under provincial law\n\nPay Rate Breakdown:\n- If your hourly rate is $30/hour:\n  • Regular time: $30.00/hour\n  • Overtime: $45.00/hour (1.5x)\n\nExample: Working 52 hours in a week = 48 regular hours ($30/hr) + 4 overtime hours ($45/hr). Nova Scotia's 48-hour threshold is higher than most provinces, allowing more regular-time hours."
+                
+            case .princeEdwardIsland:
+                return "In Prince Edward Island, regular working hours follow a standard weekly calculation with a higher threshold.\n\n• Regular Time (1.0x rate): First 48 hours per week\n• Time-and-a-Half (1.5x rate): All hours beyond 48 per week\n• Double Time (2.0x rate): Not standard under provincial law\n\nPay Rate Breakdown:\n- If your hourly rate is $30/hour:\n  • Regular time: $30.00/hour\n  • Overtime: $45.00/hour (1.5x)\n\nExample: Working 52 hours in a week = 48 regular hours ($30/hr) + 4 overtime hours ($45/hr). PEI's 48-hour weekly threshold allows more regular-time hours than standard 40-hour provinces."
+                
+            case .saskatchewan:
+                return "In Saskatchewan, regular working hours follow a weekly calculation with potential daily agreement provisions.\n\n• Regular Time (1.0x rate): First 40 hours per week\n• Time-and-a-Half (1.5x rate): Hours beyond 40/week (with potential for 12 hours/day agreement)\n• Double Time (2.0x rate): Not standard under provincial law\n\nPay Rate Breakdown:\n- If your hourly rate is $30/hour:\n  • Regular time: $30.00/hour\n  • Overtime: $45.00/hour (1.5x)\n\nExample: Working 45 hours in a week = 40 regular hours ($30/hr) + 5 overtime hours ($45/hr). Saskatchewan allows written agreements for modified daily schedules."
+                
+            case .yukon:
+                return "In Yukon, regular working hours follow standard federal-style weekly calculations.\n\n• Regular Time (1.0x rate): First 40 hours per week\n• Time-and-a-Half (1.5x rate): All hours beyond 40 per week\n• Double Time (2.0x rate): Not standard under territorial law\n\nPay Rate Breakdown:\n- If your hourly rate is $30/hour:\n  • Regular time: $30.00/hour\n  • Overtime: $45.00/hour (1.5x)\n\nExample: Working 45 hours in a week = 40 regular hours ($30/hr) + 5 overtime hours ($45/hr). Yukon follows standard 40-hour weekly overtime calculations."
+                
+            case .northwestTerritories:
+                return "In Northwest Territories, regular working hours provide both daily and weekly protections.\n\n• Regular Time (1.0x rate): First 8 hours per day\n• Time-and-a-Half (1.5x rate): Hours beyond 8/day OR beyond 40/week (whichever is greater)\n• Double Time (2.0x rate): Not standard under territorial law\n\nPay Rate Breakdown:\n- If your hourly rate is $30/hour:\n  • Regular time: $30.00/hour\n  • Overtime: $45.00/hour (1.5x)\n\nExample: Working 10 hours/day for 4 days = 32 regular hours + 8 overtime hours. NWT uses whichever calculation (daily or weekly) provides more overtime compensation."
+                
+            case .nunavut:
+                return "In Nunavut, overtime rules typically follow territorial employment standards similar to other northern territories.\n\n• Regular Time (1.0x rate): Generally first 8 hours/day or 40 hours/week\n• Time-and-a-Half (1.5x rate): Usually beyond daily/weekly thresholds\n• Double Time (2.0x rate): Varies by territorial regulations\n\nPay Rate Example (at $30/hour):\n• Regular: $30.00/hour\n• Overtime: $45.00/hour (1.5x)\n• Double: $60.00/hour (2.0x, where applicable)\n\nPlease consult current Nunavut employment standards for exact requirements as territorial regulations may have specific provisions."
+            }
+            
+        case .unitedStates:
+            switch selectedState {
+            case .california:
+                return withUSSource("In California, overtime follows state law in addition to FLSA.\n\n• Regular Time (1.0x): First 8 hours/day and first 40 hours/week\n• Time-and-a-Half (1.5x): Hours 8.01–12.00 per day, and all hours beyond 40 per week\n• Double Time (2.0x): After 12 hours/day; and after 8 hours on the seventh consecutive day in a workweek\n\nExample at $30/hr: 10-hour day → 8 regular ($30), 2 overtime ($45). 13-hour day → 8 regular, 4 overtime, 1 double time.")
+            case .alaska:
+                return withUSSource("In Alaska, state law provides daily overtime in addition to FLSA weekly rules.\n\n• Regular Time (1.0x): First 8 hours/day and first 40 hours/week\n• Time-and-a-Half (1.5x): All hours beyond 8/day or beyond 40/week\n• Double Time (2.0x): Not mandated statewide\n\nExample at $30/hr: 10-hour day → 8 regular ($30), 2 overtime ($45).")
+            case .newMexico:
+                return withUSSource("In New Mexico, overtime follows federal FLSA weekly rules.\n\n• Regular Time (1.0x): First 40 hours/week\n• Time-and-a-Half (1.5x): All hours beyond 40/week\n• Double Time (2.0x): Not required by law\n\nExample at $30/hr: 50-hour week → 40 regular ($30), 10 overtime ($45).")
+            default:
+                let name = selectedState.displayName
+                return withUSSource("In \(name), overtime generally follows the federal FLSA weekly standard unless state law provides more.\n\n• Regular Time (1.0x): First 40 hours per week\n• Time-and-a-Half (1.5x): All hours beyond 40 per week\n• Double Time (2.0x): Not required by federal law (may exist by employer policy or specific state contexts)\n\nCheck current state regulations for exceptions (e.g., daily overtime in California, Alaska).")
+            }
+        }
+    }
+    
     private let calendar = Calendar.current
     private var cachedHolidays: [String: [StatHoliday]] = [:]
     
@@ -131,8 +251,10 @@ class HolidayManager: ObservableObject {
         let adminCode: String = {
             if selectedCountry == .unitedStates {
                 let name = selectedState.displayName
-                if name == "New Mexico" { return "NM" }
-                return name
+                let abbrevMap: [String: String] = [
+                    "Alabama":"AL","Alaska":"AK","Arizona":"AZ","Arkansas":"AR","California":"CA","Colorado":"CO","Connecticut":"CT","Delaware":"DE","Florida":"FL","Georgia":"GA","Hawaii":"HI","Idaho":"ID","Illinois":"IL","Indiana":"IN","Iowa":"IA","Kansas":"KS","Kentucky":"KY","Louisiana":"LA","Maine":"ME","Maryland":"MD","Massachusetts":"MA","Michigan":"MI","Minnesota":"MN","Mississippi":"MS","Missouri":"MO","Montana":"MT","Nebraska":"NE","Nevada":"NV","New Hampshire":"NH","New Jersey":"NJ","New Mexico":"NM","New York":"NY","North Carolina":"NC","North Dakota":"ND","Ohio":"OH","Oklahoma":"OK","Oregon":"OR","Pennsylvania":"PA","Rhode Island":"RI","South Carolina":"SC","South Dakota":"SD","Tennessee":"TN","Texas":"TX","Utah":"UT","Vermont":"VT","Virginia":"VA","Washington":"WA","West Virginia":"WV","Wisconsin":"WI","Wyoming":"WY","District of Columbia":"DC"
+                ]
+                return abbrevMap[name] ?? name
             } else {
                 let name = selectedProvince.displayName
                 if name == "British Columbia" { return "BC" }
@@ -233,7 +355,7 @@ class HolidayManager: ObservableObject {
             let isoCountry = region.countryCode ?? ""
             let adminCode = region.adminCode ?? ""
             
-            var detectedCountry: Country = .canada
+            var detectedCountry: TimecardCountry = .canada
             if isoCountry.uppercased() == "US" {
                 detectedCountry = .unitedStates
             } else if isoCountry.uppercased() == "CA" {
@@ -463,14 +585,18 @@ class HolidayManager: ObservableObject {
 /// Describes how daily/weekly overtime should be computed for a region.
 struct OvertimePolicy: Codable, Equatable {
     // Daily thresholds
-    var dailyRegularCap: Double?   // e.g., 8.0 means OT starts after 8
-    var dailyOTCap: Double?        // e.g., 12.0 means DT starts after 12 (OT applies between regularCap..OTCap)
+    // Regular up to R, Overtime applies from R..O, Double Time applies after D
+    var dailyRegularCap: Double?   // R
+    var dailyOTCap: Double?        // O (upper bound of OT band)
+    var dailyDTCap: Double?        // D (DT starts after this)
     // Weekly thresholds (optional; not used yet in PDF view but available)
-    var weeklyRegularCap: Double?  // e.g., 40.0 means OT after 40 in a week
+    var weeklyRegularCap: Double?
 
-    static let bcCanada: OvertimePolicy = .init(dailyRegularCap: 8, dailyOTCap: 12, weeklyRegularCap: nil)
-    static let usFederalCommon: OvertimePolicy = .init(dailyRegularCap: nil, dailyOTCap: nil, weeklyRegularCap: 40) // OT after 40/wk (no daily OT federally)
-    static let defaultInternational: OvertimePolicy = .init(dailyRegularCap: 8, dailyOTCap: 12, weeklyRegularCap: nil)
+    static let bcCanada: OvertimePolicy = .init(dailyRegularCap: 8, dailyOTCap: 12, dailyDTCap: 12, weeklyRegularCap: 40)
+    static let alberta: OvertimePolicy = .init(dailyRegularCap: 8, dailyOTCap: nil, dailyDTCap: nil, weeklyRegularCap: 44) // 44 hrs/week, no double time
+    static let usFederalCommon: OvertimePolicy = .init(dailyRegularCap: nil, dailyOTCap: nil, dailyDTCap: nil, weeklyRegularCap: 40) // OT after 40/wk (no daily OT federally)
+    static let defaultInternational: OvertimePolicy = .init(dailyRegularCap: 8, dailyOTCap: 12, dailyDTCap: 12, weeklyRegularCap: 40)
+    static let usDaily8Weekly40: OvertimePolicy = .init(dailyRegularCap: 8, dailyOTCap: nil, dailyDTCap: nil, weeklyRegularCap: 40)
 }
 
 extension HolidayManager {
@@ -478,11 +604,24 @@ extension HolidayManager {
     func inferredOvertimePolicy() -> OvertimePolicy {
         switch selectedCountry {
         case .canada:
-            // Many Canadian provinces use daily 8/12; customize per province as needed
-            return .bcCanada
+            switch selectedProvince {
+            case .alberta:
+                return .alberta
+            case .britishColumbia:
+                return .bcCanada
+            default:
+                // Default to BC rules for other provinces until specifically implemented
+                return .bcCanada
+            }
         case .unitedStates:
-            // Default to federal-style weekly OT
-            return .usFederalCommon
+            switch selectedState {
+            case .california:
+                return .bcCanada // daily 8/12 + weekly 40 approximates CA rules
+            case .alaska:
+                return .usDaily8Weekly40 // daily 8 + weekly 40, no DT
+            default:
+                return .usFederalCommon
+            }
         }
     }
 }
@@ -831,6 +970,11 @@ final class TimecardStore: ObservableObject {
 
     // On Call feature toggle
     @AppStorage("onCallEnabled") var onCallEnabled: Bool = true
+    @AppStorage("overtimeCustomNotes") var overtimeCustomNotes: String = ""
+    @AppStorage("useCustomOvertimePolicy") var useCustomOvertimePolicy: Bool = false
+    @AppStorage("customRegularHours") var customRegularHours: Double = 8
+    @AppStorage("customOvertimeHours") var customOvertimeHours: Double = 8
+    @AppStorage("customDoubleTimeAfter") var customDoubleTimeAfter: Double = 12
     
     // Holiday management
     @Published var holidayManager = HolidayManager()
@@ -1502,6 +1646,10 @@ final class TimecardStore: ObservableObject {
         // Initialize overtime policy from region
         self.overtimePolicy = holidayManager.inferredOvertimePolicy()
         
+        if self.useCustomOvertimePolicy {
+            self.overtimePolicy = OvertimePolicy(dailyRegularCap: self.customRegularHours, dailyOTCap: self.customOvertimeHours, dailyDTCap: self.customDoubleTimeAfter, weeklyRegularCap: self.holidayManager.inferredOvertimePolicy().weeklyRegularCap)
+        }
+        
         // Check if current labourCodes matches official list, else overwrite
         func labourCodesEqual(_ lhs: [LabourCode], _ rhs: [LabourCode]) -> Bool {
             guard lhs.count == rhs.count else { return false }
@@ -1565,7 +1713,11 @@ final class TimecardStore: ObservableObject {
         // Observe region changes to refresh overtime policy
         NotificationCenter.default.addObserver(forName: .regionDidChange, object: nil, queue: .main) { [weak self] _ in
             guard let self = self else { return }
-            self.overtimePolicy = self.holidayManager.inferredOvertimePolicy()
+            if self.useCustomOvertimePolicy {
+                self.overtimePolicy = OvertimePolicy(dailyRegularCap: self.customRegularHours, dailyOTCap: self.customOvertimeHours, dailyDTCap: self.customDoubleTimeAfter, weeklyRegularCap: self.holidayManager.inferredOvertimePolicy().weeklyRegularCap)
+            } else {
+                self.overtimePolicy = self.holidayManager.inferredOvertimePolicy()
+            }
         }
     }
 }

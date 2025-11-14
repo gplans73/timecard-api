@@ -185,7 +185,10 @@ struct SettingsView: View {
                 }
                 
                 Section("Overtime Policy") {
-                    NavigationLink(destination: OvertimePolicySelectorView().environmentObject(OvertimeSettingsStore())) {
+                    NavigationLink(destination: OvertimePolicySelectorView()
+                        .environmentObject(store)
+                        .environmentObject(store.holidayManager)
+                    ) {
                         HStack {
                             Image(systemName: "clock.badge.exclamationmark")
                             VStack(alignment: .leading, spacing: 2) {
@@ -218,6 +221,37 @@ struct SettingsView: View {
                             await store.preloadHolidaysForCurrentPeriod()
                         }
                     }
+                    
+                    // Country and Province/State Selection
+                    Picker("Country", selection: Binding(
+                        get: { store.holidayManager.selectedCountry },
+                        set: { store.holidayManager.selectedCountry = $0 }
+                    )) {
+                        ForEach(TimecardCountry.allCases, id: \.self) { country in
+                            Text(country.displayName).tag(country)
+                        }
+                    }
+                    
+                    if store.holidayManager.selectedCountry == .canada {
+                        Picker("Province", selection: Binding(
+                            get: { store.holidayManager.selectedProvince },
+                            set: { store.holidayManager.selectedProvince = $0 }
+                        )) {
+                            ForEach(Province.allCases, id: \.self) { province in
+                                Text(province.displayName).tag(province)
+                            }
+                        }
+                    } else {
+                        Picker("State", selection: Binding(
+                            get: { store.holidayManager.selectedState },
+                            set: { store.holidayManager.selectedState = $0 }
+                        )) {
+                            ForEach(TimecardUSState.allCases, id: \.self) { state in
+                                Text(state.displayName).tag(state)
+                            }
+                        }
+                    }
+                    
                     VStack(alignment: .leading, spacing: 4) {
                         Text(store.holidayManager.regionStatusLine)
                             .font(.footnote)
@@ -337,3 +371,4 @@ private struct EmailPreviewSheet: View {
             .environmentObject(TimecardStore.sampleStore)
     }
 }
+

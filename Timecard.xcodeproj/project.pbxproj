@@ -8,22 +8,65 @@
 
 /* Begin PBXBuildFile section */
 		6204F1812E9DE82B007D4DD8 /* AppIconTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6204F1802E9DE82B007D4DD8 /* AppIconTypes.swift */; };
+		6214D2E12EBA6CD8009BB0C9 /* TimecardAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6214D2E02EBA6CD8009BB0C9 /* TimecardAPIService.swift */; };
 		621F4D2D2EA09A43007F6805 /* AppIconViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 621F4D2C2EA09A43007F6805 /* AppIconViewModel.swift */; };
+		622C9C0C2EBEC19200A49A61 /* go 2.mod in Resources */ = {isa = PBXBuildFile; fileRef = 622C9C0B2EBEC19200A49A61 /* go 2.mod */; };
+		622D46642EBAAB3500342CE1 /* go.mod in Resources */ = {isa = PBXBuildFile; fileRef = 622D46632EBAAB3500342CE1 /* go.mod */; };
+		622D46662EBAAB4600342CE1 /* Dockerfile in Resources */ = {isa = PBXBuildFile; fileRef = 622D46652EBAAB4600342CE1 /* Dockerfile */; };
+		622D46682EBAAB5000342CE1 /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = 622D46672EBAAB5000342CE1 /* README.md */; };
 		623792A02E986B18004A699C /* ToolbarButtonsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6237929F2E986B18004A699C /* ToolbarButtonsSettingsView.swift */; };
 		623904DD2EA0C36F0090558B /* IconSanityCheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = 623904DC2EA0C36F0090558B /* IconSanityCheck.swift */; };
 		623CA1812E971E7B00094FBC /* JobCodeInputView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 623CA1802E971E7B00094FBC /* JobCodeInputView.swift */; };
 		623CA1832E97234400094FBC /* JobCodeKeypad.swift in Sources */ = {isa = PBXBuildFile; fileRef = 623CA1822E97234400094FBC /* JobCodeKeypad.swift */; };
+		624A44202EC678E1003DEC0B /* pdf_converter_alternative.go in Resources */ = {isa = PBXBuildFile; fileRef = 624A441F2EC678E1003DEC0B /* pdf_converter_alternative.go */; };
+		624A44222EC67915003DEC0B /* PDF_CONVERSION_OPTIONS.md in Resources */ = {isa = PBXBuildFile; fileRef = 624A44212EC67915003DEC0B /* PDF_CONVERSION_OPTIONS.md */; };
+		624A44242EC67920003DEC0B /* go.mod.example in Resources */ = {isa = PBXBuildFile; fileRef = 624A44232EC67920003DEC0B /* go.mod.example */; };
+		624A44262EC6793D003DEC0B /* QUICK_START_PDF.md in Resources */ = {isa = PBXBuildFile; fileRef = 624A44252EC6793D003DEC0B /* QUICK_START_PDF.md */; };
+		624A44282EC67968003DEC0B /* PDF_DECISION_GUIDE.md in Resources */ = {isa = PBXBuildFile; fileRef = 624A44272EC67968003DEC0B /* PDF_DECISION_GUIDE.md */; };
+		624A442A2EC67A7F003DEC0B /* GOFPDF_SETUP.md in Resources */ = {isa = PBXBuildFile; fileRef = 624A44292EC67A7F003DEC0B /* GOFPDF_SETUP.md */; };
+		624A442C2EC67AA2003DEC0B /* GOFPDF_COMPLETE.md in Resources */ = {isa = PBXBuildFile; fileRef = 624A442B2EC67AA2003DEC0B /* GOFPDF_COMPLETE.md */; };
+		624A442E2EC67C96003DEC0B /* BLANK_PDF_FIX.md in Resources */ = {isa = PBXBuildFile; fileRef = 624A442D2EC67C96003DEC0B /* BLANK_PDF_FIX.md */; };
+		624B75882EC02CF500BA6CBC /* API_INTEGRATION.md in Resources */ = {isa = PBXBuildFile; fileRef = 624B75872EC02CF500BA6CBC /* API_INTEGRATION.md */; };
+		624B758A2EC02D5400BA6CBC /* TestGoAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 624B75892EC02D5400BA6CBC /* TestGoAPI.swift */; };
+		624B758C2EC02D7F00BA6CBC /* GO_BACKEND_SETUP.md in Resources */ = {isa = PBXBuildFile; fileRef = 624B758B2EC02D7F00BA6CBC /* GO_BACKEND_SETUP.md */; };
+		624B758E2EC02DB700BA6CBC /* INTEGRATION_SUMMARY.md in Resources */ = {isa = PBXBuildFile; fileRef = 624B758D2EC02DB700BA6CBC /* INTEGRATION_SUMMARY.md */; };
+		624B75902EC02DD900BA6CBC /* test-api.sh in Resources */ = {isa = PBXBuildFile; fileRef = 624B758F2EC02DD900BA6CBC /* test-api.sh */; };
+		624B75922EC02DF700BA6CBC /* QUICK_REFERENCE.md in Resources */ = {isa = PBXBuildFile; fileRef = 624B75912EC02DF700BA6CBC /* QUICK_REFERENCE.md */; };
+		624B75942EC02E0400BA6CBC /* .env.example in Resources */ = {isa = PBXBuildFile; fileRef = 624B75932EC02E0400BA6CBC /* .env.example */; };
+		624B75962EC12B2400BA6CBC /* TestGoAPI+FormulaFixer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 624B75952EC12B2400BA6CBC /* TestGoAPI+FormulaFixer.swift */; };
+		624B75982EC12B4500BA6CBC /* TestGoAPI-README.md in Resources */ = {isa = PBXBuildFile; fileRef = 624B75972EC12B4500BA6CBC /* TestGoAPI-README.md */; };
+		624F38C52EC56815006BEBF9 /* NIGHT_SHIFT_FIX.md in Resources */ = {isa = PBXBuildFile; fileRef = 624F38C42EC56815006BEBF9 /* NIGHT_SHIFT_FIX.md */; };
+		624F38C72EC5685F006BEBF9 /* GO_BACKEND_NIGHT_SHIFT_FIX.go in Resources */ = {isa = PBXBuildFile; fileRef = 624F38C62EC5685F006BEBF9 /* GO_BACKEND_NIGHT_SHIFT_FIX.go */; };
+		624F38C92EC5687E006BEBF9 /* FIX_SUMMARY.md in Resources */ = {isa = PBXBuildFile; fileRef = 624F38C82EC5687E006BEBF9 /* FIX_SUMMARY.md */; };
+		624F38CB2EC56889006BEBF9 /* test_night_shift_api.sh in Resources */ = {isa = PBXBuildFile; fileRef = 624F38CA2EC56889006BEBF9 /* test_night_shift_api.sh */; };
+		624F38CD2EC5B014006BEBF9 /* NIGHT_SHIFT_FIX_APPLIED.md in Resources */ = {isa = PBXBuildFile; fileRef = 624F38CC2EC5B014006BEBF9 /* NIGHT_SHIFT_FIX_APPLIED.md */; };
 		6256E3232EA047A700397649 /* DeepIconDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6256E3222EA047A700397649 /* DeepIconDiagnostics.swift */; };
+		625E23982EBA7DCF00050B06 /* template.xlsx in Resources */ = {isa = PBXBuildFile; fileRef = 625E23972EBA7DCF00050B06 /* template.xlsx */; };
+		6265A6BA2EC12F7100D5D8A3 /* GO-API-MULTIWEEK-UPDATE.md in Resources */ = {isa = PBXBuildFile; fileRef = 6265A6B92EC12F7100D5D8A3 /* GO-API-MULTIWEEK-UPDATE.md */; };
+		6265A6BE2EC1319A00D5D8A3 /* main.go in Resources */ = {isa = PBXBuildFile; fileRef = 6265A6BD2EC1319A00D5D8A3 /* main.go */; };
+		6265A6C02EC1351800D5D8A3 /* EMAIL_SETUP.md in Resources */ = {isa = PBXBuildFile; fileRef = 6265A6BF2EC1351800D5D8A3 /* EMAIL_SETUP.md */; };
+		6265A6C22EC1353C00D5D8A3 /* EMAIL_IMPLEMENTATION_SUMMARY.md in Resources */ = {isa = PBXBuildFile; fileRef = 6265A6C12EC1353C00D5D8A3 /* EMAIL_IMPLEMENTATION_SUMMARY.md */; };
+		6265A6C42EC1354A00D5D8A3 /* SMTP_QUICK_SETUP.md in Resources */ = {isa = PBXBuildFile; fileRef = 6265A6C32EC1354A00D5D8A3 /* SMTP_QUICK_SETUP.md */; };
 		6269EB172E8DB10100012C3F /* Timecard-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 620706D82E8C735200493D54 /* Timecard-Info.plist */; };
+		627980152EAFF7ED009379D4 /* SoundEffects.swift in Sources */ = {isa = PBXBuildFile; fileRef = 627980142EAFF7ED009379D4 /* SoundEffects.swift */; };
+		627980192EAFFABA009379D4 /* MailSwish.wav in Resources */ = {isa = PBXBuildFile; fileRef = 627980182EAFFABA009379D4 /* MailSwish.wav */; };
 		627CA04E2EA93C6300CC80F3 /* OvertimePolicySettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 627CA04D2EA93C6300CC80F3 /* OvertimePolicySettingsView.swift */; };
 		627CA0502EA93DAA00CC80F3 /* TimeTotals+DiagnosticsShim.swift in Sources */ = {isa = PBXBuildFile; fileRef = 627CA04F2EA93DAA00CC80F3 /* TimeTotals+DiagnosticsShim.swift */; };
 		629046B42E9FF0C30063F1B3 /* AppIconManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 629046B32E9FF0C30063F1B3 /* AppIconManager.swift */; };
 		62A410152E9D8ED600641376 /* PushNotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62A410142E9D8ED600641376 /* PushNotificationManager.swift */; };
+		62A60CE02EBC1C6E00FD1EAE /* main.go.fixed in Resources */ = {isa = PBXBuildFile; fileRef = 62A60CDF2EBC1C6E00FD1EAE /* main.go.fixed */; };
 		62ABAB682EA5653400FB5792 /* TimecardStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62ABAB672EA5653400FB5792 /* TimecardStore.swift */; };
 		62B4CF552E98630B0060BF26 /* NumericKeypad.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62B4CF542E98630B0060BF26 /* NumericKeypad.swift */; };
 		62B4CF572E9867230060BF26 /* JobCodeTextField.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62B4CF562E9867230060BF26 /* JobCodeTextField.swift */; };
 		62B8BC822E90828300F3DBFE /* JobsSeed.csv in Resources */ = {isa = PBXBuildFile; fileRef = 62B8BC812E90828300F3DBFE /* JobsSeed.csv */; };
 		62C673B22E96E01700BC1D23 /* AssistantTextField.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62C673B12E96E01700BC1D23 /* AssistantTextField.swift */; };
+		62EB24782EC67E9800B175D1 /* PDF_MIGRATION_SUMMARY.md in Resources */ = {isa = PBXBuildFile; fileRef = 62EB24772EC67E9800B175D1 /* PDF_MIGRATION_SUMMARY.md */; };
+		62EB247A2EC6802F00B175D1 /* PDF_IMPROVEMENTS.md in Resources */ = {isa = PBXBuildFile; fileRef = 62EB24792EC6802F00B175D1 /* PDF_IMPROVEMENTS.md */; };
+		62EB247C2EC682AD00B175D1 /* render-build.sh in Resources */ = {isa = PBXBuildFile; fileRef = 62EB247B2EC682AD00B175D1 /* render-build.sh */; };
+		62EB247E2EC682D200B175D1 /* LIBREOFFICE_DEPLOYMENT.md in Resources */ = {isa = PBXBuildFile; fileRef = 62EB247D2EC682D200B175D1 /* LIBREOFFICE_DEPLOYMENT.md */; };
+		62EB24802EC682EA00B175D1 /* IMPLEMENTATION_COMPLETE.md in Resources */ = {isa = PBXBuildFile; fileRef = 62EB247F2EC682EA00B175D1 /* IMPLEMENTATION_COMPLETE.md */; };
+		62EB24822EC682FE00B175D1 /* DEPLOY_NOW.md in Resources */ = {isa = PBXBuildFile; fileRef = 62EB24812EC682FE00B175D1 /* DEPLOY_NOW.md */; };
+		62EB24842EC6831300B175D1 /* CHANGES_SUMMARY.md in Resources */ = {isa = PBXBuildFile; fileRef = 62EB24832EC6831300B175D1 /* CHANGES_SUMMARY.md */; };
 		62F564CD2E905B59008E6EEC /* JobsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62F564CC2E905B59008E6EEC /* JobsStore.swift */; };
 		62F848362E8C7AAD0059C024 /* README.txt in Resources */ = {isa = PBXBuildFile; fileRef = 620706E72E8C735200493D54 /* README.txt */; };
 		62F848372E8C7AAD0059C024 /* MailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 620706DE2E8C735200493D54 /* MailView.swift */; };
@@ -122,23 +165,66 @@
 		620706FC2E8C735200493D54 /* View+Keyboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "View+Keyboard.swift"; sourceTree = "<group>"; };
 		620706FD2E8C735200493D54 /* XLSXWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XLSXWriter.swift; sourceTree = "<group>"; };
 		620764BB2E9D85C6005807ED /* Timecard.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Timecard.entitlements; sourceTree = "<group>"; };
+		6214D2E02EBA6CD8009BB0C9 /* TimecardAPIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimecardAPIService.swift; sourceTree = "<group>"; };
 		621F4D2C2EA09A43007F6805 /* AppIconViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconViewModel.swift; sourceTree = "<group>"; };
+		622C9C0B2EBEC19200A49A61 /* go 2.mod */ = {isa = PBXFileReference; lastKnownFileType = text; path = "go 2.mod"; sourceTree = "<group>"; };
+		622D46632EBAAB3500342CE1 /* go.mod */ = {isa = PBXFileReference; lastKnownFileType = text; path = go.mod; sourceTree = "<group>"; };
+		622D46652EBAAB4600342CE1 /* Dockerfile */ = {isa = PBXFileReference; lastKnownFileType = text; path = Dockerfile; sourceTree = "<group>"; };
+		622D46672EBAAB5000342CE1 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		6237929F2E986B18004A699C /* ToolbarButtonsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolbarButtonsSettingsView.swift; sourceTree = "<group>"; };
 		623904DC2EA0C36F0090558B /* IconSanityCheck.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconSanityCheck.swift; sourceTree = "<group>"; };
 		623CA17F2E971D4900094FBC /* TimecardLG-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "TimecardLG-Bridging-Header.h"; sourceTree = "<group>"; };
 		623CA1802E971E7B00094FBC /* JobCodeInputView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JobCodeInputView.swift; sourceTree = "<group>"; };
 		623CA1822E97234400094FBC /* JobCodeKeypad.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JobCodeKeypad.swift; sourceTree = "<group>"; };
 		623EF73B2E8DE9DA008EC7EE /* Timecard.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Timecard.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		624A441F2EC678E1003DEC0B /* pdf_converter_alternative.go */ = {isa = PBXFileReference; lastKnownFileType = text; path = pdf_converter_alternative.go; sourceTree = "<group>"; };
+		624A44212EC67915003DEC0B /* PDF_CONVERSION_OPTIONS.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = PDF_CONVERSION_OPTIONS.md; sourceTree = "<group>"; };
+		624A44232EC67920003DEC0B /* go.mod.example */ = {isa = PBXFileReference; lastKnownFileType = text; path = go.mod.example; sourceTree = "<group>"; };
+		624A44252EC6793D003DEC0B /* QUICK_START_PDF.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = QUICK_START_PDF.md; sourceTree = "<group>"; };
+		624A44272EC67968003DEC0B /* PDF_DECISION_GUIDE.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = PDF_DECISION_GUIDE.md; sourceTree = "<group>"; };
+		624A44292EC67A7F003DEC0B /* GOFPDF_SETUP.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = GOFPDF_SETUP.md; sourceTree = "<group>"; };
+		624A442B2EC67AA2003DEC0B /* GOFPDF_COMPLETE.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = GOFPDF_COMPLETE.md; sourceTree = "<group>"; };
+		624A442D2EC67C96003DEC0B /* BLANK_PDF_FIX.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = BLANK_PDF_FIX.md; sourceTree = "<group>"; };
+		624B75872EC02CF500BA6CBC /* API_INTEGRATION.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = API_INTEGRATION.md; sourceTree = "<group>"; };
+		624B75892EC02D5400BA6CBC /* TestGoAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestGoAPI.swift; sourceTree = "<group>"; };
+		624B758B2EC02D7F00BA6CBC /* GO_BACKEND_SETUP.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = GO_BACKEND_SETUP.md; sourceTree = "<group>"; };
+		624B758D2EC02DB700BA6CBC /* INTEGRATION_SUMMARY.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = INTEGRATION_SUMMARY.md; sourceTree = "<group>"; };
+		624B758F2EC02DD900BA6CBC /* test-api.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = "test-api.sh"; sourceTree = "<group>"; };
+		624B75912EC02DF700BA6CBC /* QUICK_REFERENCE.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = QUICK_REFERENCE.md; sourceTree = "<group>"; };
+		624B75932EC02E0400BA6CBC /* .env.example */ = {isa = PBXFileReference; lastKnownFileType = text; path = .env.example; sourceTree = "<group>"; };
+		624B75952EC12B2400BA6CBC /* TestGoAPI+FormulaFixer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TestGoAPI+FormulaFixer.swift"; sourceTree = "<group>"; };
+		624B75972EC12B4500BA6CBC /* TestGoAPI-README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "TestGoAPI-README.md"; sourceTree = "<group>"; };
+		624F38C42EC56815006BEBF9 /* NIGHT_SHIFT_FIX.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = NIGHT_SHIFT_FIX.md; sourceTree = "<group>"; };
+		624F38C62EC5685F006BEBF9 /* GO_BACKEND_NIGHT_SHIFT_FIX.go */ = {isa = PBXFileReference; lastKnownFileType = text; path = GO_BACKEND_NIGHT_SHIFT_FIX.go; sourceTree = "<group>"; };
+		624F38C82EC5687E006BEBF9 /* FIX_SUMMARY.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = FIX_SUMMARY.md; sourceTree = "<group>"; };
+		624F38CA2EC56889006BEBF9 /* test_night_shift_api.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = test_night_shift_api.sh; sourceTree = "<group>"; };
+		624F38CC2EC5B014006BEBF9 /* NIGHT_SHIFT_FIX_APPLIED.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = NIGHT_SHIFT_FIX_APPLIED.md; sourceTree = "<group>"; };
 		6256E3222EA047A700397649 /* DeepIconDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepIconDiagnostics.swift; sourceTree = "<group>"; };
+		625E23972EBA7DCF00050B06 /* template.xlsx */ = {isa = PBXFileReference; lastKnownFileType = file; path = template.xlsx; sourceTree = "<group>"; };
+		6265A6B92EC12F7100D5D8A3 /* GO-API-MULTIWEEK-UPDATE.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "GO-API-MULTIWEEK-UPDATE.md"; sourceTree = "<group>"; };
+		6265A6BD2EC1319A00D5D8A3 /* main.go */ = {isa = PBXFileReference; lastKnownFileType = text; path = main.go; sourceTree = "<group>"; };
+		6265A6BF2EC1351800D5D8A3 /* EMAIL_SETUP.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = EMAIL_SETUP.md; sourceTree = "<group>"; };
+		6265A6C12EC1353C00D5D8A3 /* EMAIL_IMPLEMENTATION_SUMMARY.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = EMAIL_IMPLEMENTATION_SUMMARY.md; sourceTree = "<group>"; };
+		6265A6C32EC1354A00D5D8A3 /* SMTP_QUICK_SETUP.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = SMTP_QUICK_SETUP.md; sourceTree = "<group>"; };
+		627980142EAFF7ED009379D4 /* SoundEffects.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundEffects.swift; sourceTree = "<group>"; };
+		627980182EAFFABA009379D4 /* MailSwish.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = MailSwish.wav; sourceTree = "<group>"; };
 		627CA04D2EA93C6300CC80F3 /* OvertimePolicySettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OvertimePolicySettingsView.swift; sourceTree = "<group>"; };
 		627CA04F2EA93DAA00CC80F3 /* TimeTotals+DiagnosticsShim.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TimeTotals+DiagnosticsShim.swift"; sourceTree = "<group>"; };
 		629046B32E9FF0C30063F1B3 /* AppIconManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconManager.swift; sourceTree = "<group>"; };
 		62A410142E9D8ED600641376 /* PushNotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushNotificationManager.swift; sourceTree = "<group>"; };
+		62A60CDF2EBC1C6E00FD1EAE /* main.go.fixed */ = {isa = PBXFileReference; lastKnownFileType = text; path = main.go.fixed; sourceTree = "<group>"; };
 		62ABAB672EA5653400FB5792 /* TimecardStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimecardStore.swift; sourceTree = "<group>"; };
 		62B4CF542E98630B0060BF26 /* NumericKeypad.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NumericKeypad.swift; sourceTree = "<group>"; };
 		62B4CF562E9867230060BF26 /* JobCodeTextField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JobCodeTextField.swift; sourceTree = "<group>"; };
 		62B8BC812E90828300F3DBFE /* JobsSeed.csv */ = {isa = PBXFileReference; lastKnownFileType = text; path = JobsSeed.csv; sourceTree = "<group>"; };
 		62C673B12E96E01700BC1D23 /* AssistantTextField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AssistantTextField.swift; sourceTree = "<group>"; };
+		62EB24772EC67E9800B175D1 /* PDF_MIGRATION_SUMMARY.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = PDF_MIGRATION_SUMMARY.md; sourceTree = "<group>"; };
+		62EB24792EC6802F00B175D1 /* PDF_IMPROVEMENTS.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = PDF_IMPROVEMENTS.md; sourceTree = "<group>"; };
+		62EB247B2EC682AD00B175D1 /* render-build.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = "render-build.sh"; sourceTree = "<group>"; };
+		62EB247D2EC682D200B175D1 /* LIBREOFFICE_DEPLOYMENT.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = LIBREOFFICE_DEPLOYMENT.md; sourceTree = "<group>"; };
+		62EB247F2EC682EA00B175D1 /* IMPLEMENTATION_COMPLETE.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = IMPLEMENTATION_COMPLETE.md; sourceTree = "<group>"; };
+		62EB24812EC682FE00B175D1 /* DEPLOY_NOW.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = DEPLOY_NOW.md; sourceTree = "<group>"; };
+		62EB24832EC6831300B175D1 /* CHANGES_SUMMARY.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = CHANGES_SUMMARY.md; sourceTree = "<group>"; };
 		62F564CC2E905B59008E6EEC /* JobsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JobsStore.swift; sourceTree = "<group>"; };
 		62F848422E8C7AEF0059C024 /* ColorExtensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorExtensions.swift; sourceTree = "<group>"; };
 		62F848742E8C9F730059C024 /* RegionLocator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RegionLocator.swift; sourceTree = "<group>"; };
@@ -231,6 +317,49 @@
 				62ABAB672EA5653400FB5792 /* TimecardStore.swift */,
 				627CA04D2EA93C6300CC80F3 /* OvertimePolicySettingsView.swift */,
 				627CA04F2EA93DAA00CC80F3 /* TimeTotals+DiagnosticsShim.swift */,
+				627980142EAFF7ED009379D4 /* SoundEffects.swift */,
+				627980182EAFFABA009379D4 /* MailSwish.wav */,
+				6214D2E02EBA6CD8009BB0C9 /* TimecardAPIService.swift */,
+				625E23972EBA7DCF00050B06 /* template.xlsx */,
+				622D46632EBAAB3500342CE1 /* go.mod */,
+				622D46652EBAAB4600342CE1 /* Dockerfile */,
+				622D46672EBAAB5000342CE1 /* README.md */,
+				62A60CDF2EBC1C6E00FD1EAE /* main.go.fixed */,
+				622C9C0B2EBEC19200A49A61 /* go 2.mod */,
+				624B75872EC02CF500BA6CBC /* API_INTEGRATION.md */,
+				624B75892EC02D5400BA6CBC /* TestGoAPI.swift */,
+				624B758B2EC02D7F00BA6CBC /* GO_BACKEND_SETUP.md */,
+				624B758D2EC02DB700BA6CBC /* INTEGRATION_SUMMARY.md */,
+				624B758F2EC02DD900BA6CBC /* test-api.sh */,
+				624B75912EC02DF700BA6CBC /* QUICK_REFERENCE.md */,
+				624B75932EC02E0400BA6CBC /* .env.example */,
+				624B75952EC12B2400BA6CBC /* TestGoAPI+FormulaFixer.swift */,
+				624B75972EC12B4500BA6CBC /* TestGoAPI-README.md */,
+				6265A6B92EC12F7100D5D8A3 /* GO-API-MULTIWEEK-UPDATE.md */,
+				6265A6BD2EC1319A00D5D8A3 /* main.go */,
+				6265A6BF2EC1351800D5D8A3 /* EMAIL_SETUP.md */,
+				6265A6C12EC1353C00D5D8A3 /* EMAIL_IMPLEMENTATION_SUMMARY.md */,
+				6265A6C32EC1354A00D5D8A3 /* SMTP_QUICK_SETUP.md */,
+				624F38C42EC56815006BEBF9 /* NIGHT_SHIFT_FIX.md */,
+				624F38C62EC5685F006BEBF9 /* GO_BACKEND_NIGHT_SHIFT_FIX.go */,
+				624F38C82EC5687E006BEBF9 /* FIX_SUMMARY.md */,
+				624F38CA2EC56889006BEBF9 /* test_night_shift_api.sh */,
+				624F38CC2EC5B014006BEBF9 /* NIGHT_SHIFT_FIX_APPLIED.md */,
+				624A441F2EC678E1003DEC0B /* pdf_converter_alternative.go */,
+				624A44212EC67915003DEC0B /* PDF_CONVERSION_OPTIONS.md */,
+				624A44232EC67920003DEC0B /* go.mod.example */,
+				624A44252EC6793D003DEC0B /* QUICK_START_PDF.md */,
+				624A44272EC67968003DEC0B /* PDF_DECISION_GUIDE.md */,
+				624A44292EC67A7F003DEC0B /* GOFPDF_SETUP.md */,
+				624A442B2EC67AA2003DEC0B /* GOFPDF_COMPLETE.md */,
+				624A442D2EC67C96003DEC0B /* BLANK_PDF_FIX.md */,
+				62EB24772EC67E9800B175D1 /* PDF_MIGRATION_SUMMARY.md */,
+				62EB24792EC6802F00B175D1 /* PDF_IMPROVEMENTS.md */,
+				62EB247B2EC682AD00B175D1 /* render-build.sh */,
+				62EB247D2EC682D200B175D1 /* LIBREOFFICE_DEPLOYMENT.md */,
+				62EB247F2EC682EA00B175D1 /* IMPLEMENTATION_COMPLETE.md */,
+				62EB24812EC682FE00B175D1 /* DEPLOY_NOW.md */,
+				62EB24832EC6831300B175D1 /* CHANGES_SUMMARY.md */,
 			);
 			sourceTree = "<group>";
 		};
@@ -303,11 +432,50 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				624B75882EC02CF500BA6CBC /* API_INTEGRATION.md in Resources */,
+				622C9C0C2EBEC19200A49A61 /* go 2.mod in Resources */,
 				62F8484E2E8C84E10059C024 /* Assets.xcassets in Resources */,
+				6265A6BE2EC1319A00D5D8A3 /* main.go in Resources */,
+				625E23982EBA7DCF00050B06 /* template.xlsx in Resources */,
+				62EB247C2EC682AD00B175D1 /* render-build.sh in Resources */,
+				6265A6C22EC1353C00D5D8A3 /* EMAIL_IMPLEMENTATION_SUMMARY.md in Resources */,
+				624B758C2EC02D7F00BA6CBC /* GO_BACKEND_SETUP.md in Resources */,
+				624B75922EC02DF700BA6CBC /* QUICK_REFERENCE.md in Resources */,
+				624F38C52EC56815006BEBF9 /* NIGHT_SHIFT_FIX.md in Resources */,
+				624B758E2EC02DB700BA6CBC /* INTEGRATION_SUMMARY.md in Resources */,
+				62EB24842EC6831300B175D1 /* CHANGES_SUMMARY.md in Resources */,
+				622D46642EBAAB3500342CE1 /* go.mod in Resources */,
+				6265A6C42EC1354A00D5D8A3 /* SMTP_QUICK_SETUP.md in Resources */,
+				624A44242EC67920003DEC0B /* go.mod.example in Resources */,
+				624B75982EC12B4500BA6CBC /* TestGoAPI-README.md in Resources */,
+				624B75902EC02DD900BA6CBC /* test-api.sh in Resources */,
 				62B8BC822E90828300F3DBFE /* JobsSeed.csv in Resources */,
+				624A442A2EC67A7F003DEC0B /* GOFPDF_SETUP.md in Resources */,
+				624A442E2EC67C96003DEC0B /* BLANK_PDF_FIX.md in Resources */,
+				62EB24802EC682EA00B175D1 /* IMPLEMENTATION_COMPLETE.md in Resources */,
 				62F848362E8C7AAD0059C024 /* README.txt in Resources */,
+				624F38CD2EC5B014006BEBF9 /* NIGHT_SHIFT_FIX_APPLIED.md in Resources */,
+				624A44202EC678E1003DEC0B /* pdf_converter_alternative.go in Resources */,
+				6265A6C02EC1351800D5D8A3 /* EMAIL_SETUP.md in Resources */,
+				627980192EAFFABA009379D4 /* MailSwish.wav in Resources */,
 				62F8484F2E8C84E70059C024 /* Assets.xcassets.zip in Resources */,
+				624F38CB2EC56889006BEBF9 /* test_night_shift_api.sh in Resources */,
+				624A44262EC6793D003DEC0B /* QUICK_START_PDF.md in Resources */,
+				624B75942EC02E0400BA6CBC /* .env.example in Resources */,
+				62EB24782EC67E9800B175D1 /* PDF_MIGRATION_SUMMARY.md in Resources */,
+				62EB247E2EC682D200B175D1 /* LIBREOFFICE_DEPLOYMENT.md in Resources */,
+				62EB24822EC682FE00B175D1 /* DEPLOY_NOW.md in Resources */,
+				62EB247A2EC6802F00B175D1 /* PDF_IMPROVEMENTS.md in Resources */,
+				624F38C72EC5685F006BEBF9 /* GO_BACKEND_NIGHT_SHIFT_FIX.go in Resources */,
+				62A60CE02EBC1C6E00FD1EAE /* main.go.fixed in Resources */,
+				622D46662EBAAB4600342CE1 /* Dockerfile in Resources */,
+				622D46682EBAAB5000342CE1 /* README.md in Resources */,
 				6269EB172E8DB10100012C3F /* Timecard-Info.plist in Resources */,
+				624A44282EC67968003DEC0B /* PDF_DECISION_GUIDE.md in Resources */,
+				624A44222EC67915003DEC0B /* PDF_CONVERSION_OPTIONS.md in Resources */,
+				6265A6BA2EC12F7100D5D8A3 /* GO-API-MULTIWEEK-UPDATE.md in Resources */,
+				624F38C92EC5687E006BEBF9 /* FIX_SUMMARY.md in Resources */,
+				624A442C2EC67AA2003DEC0B /* GOFPDF_COMPLETE.md in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -378,6 +546,7 @@
 				62F8483C2E8C7AAD0059C024 /* ThemeType.swift in Sources */,
 				62F848572E8C85FF0059C024 /* SettingsView.swift in Sources */,
 				62F8483D2E8C7AAD0059C024 /* PayPeriod_SunSat_FridayPay.swift in Sources */,
+				627980152EAFF7ED009379D4 /* SoundEffects.swift in Sources */,
 				62F848562E8C85F70059C024 /* SummaryTabSimple.swift in Sources */,
 				62B4CF572E9867230060BF26 /* JobCodeTextField.swift in Sources */,
 				62F848592E8C86250059C024 /* IconGenerator.swift in Sources */,
@@ -386,12 +555,15 @@
 				62F848602E8C8BDF0059C024 /* LogoSettingsView.swift in Sources */,
 				62F848502E8C84F00059C024 /* CloudSupport.swift in Sources */,
 				627CA0502EA93DAA00CC80F3 /* TimeTotals+DiagnosticsShim.swift in Sources */,
+				624B75962EC12B2400BA6CBC /* TestGoAPI+FormulaFixer.swift in Sources */,
 				62F848622E8C8C0E0059C024 /* EmailSettingsView.swift in Sources */,
 				62F848702E8C8CD00059C024 /* XLSXWriter.swift in Sources */,
 				62F8483F2E8C7AAD0059C024 /* PayPeriodBC.swift in Sources */,
 				62F8486F2E8C8CC80059C024 /* View+Keyboard.swift in Sources */,
 				62F848402E8C7AAD0059C024 /* LegacyCompat.swift in Sources */,
 				62F8484B2E8C84B70059C024 /* SettingsSync.swift in Sources */,
+				6214D2E12EBA6CD8009BB0C9 /* TimecardAPIService.swift in Sources */,
+				624B758A2EC02D5400BA6CBC /* TestGoAPI.swift in Sources */,
 				62F848412E8C7AAD0059C024 /* PDFRenderer.swift in Sources */,
 				62F848532E8C85D10059C024 /* TimecardPDFView.swift in Sources */,
 				62F8485F2E8C8BD30059C024 /* JobsSettingsView.swift in Sources */,

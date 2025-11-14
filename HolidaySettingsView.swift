@@ -25,7 +25,7 @@ struct HolidaySettingsView: View {
                     get: { store.holidayManager.selectedCountry },
                     set: { store.holidayManager.selectedCountry = $0 }
                 )) {
-                    ForEach(Country.allCases, id: \.self) { country in
+                    ForEach(TimecardCountry.allCases, id: \.self) { country in
                         Text(country.displayName).tag(country)
                     }
                 }
@@ -37,6 +37,15 @@ struct HolidaySettingsView: View {
                     )) {
                         ForEach(Province.allCases, id: \.self) { province in
                             Text(province.displayName).tag(province)
+                        }
+                    }
+                } else {
+                    Picker("State", selection: Binding(
+                        get: { store.holidayManager.selectedState },
+                        set: { store.holidayManager.selectedState = $0 }
+                    )) {
+                        ForEach(TimecardUSState.allCases, id: \.self) { state in
+                            Text(state.displayName).tag(state)
                         }
                     }
                 }

@@ -1,23 +1,35 @@
 //
 //  PDFRenderer.swift
 //
+//  ⚠️ DEPRECATED: This file is no longer used.
+//  PDF generation is now handled by the Go API at /api/generate-pdf
+//  You can safely delete this file.
+//
 import SwiftUI
 import PDFKit
 
+@available(*, deprecated, message: "Use Go API /api/generate-pdf instead")
 enum PDFRenderer {
     static let a4Portrait: CGSize = CGSize(width: 595.0, height: 842.0)
     static let a4Landscape: CGSize = CGSize(width: 842.0, height: 595.0)
 
     static func render(view: AnyView, size: CGSize = PDFRenderer.a4Landscape) -> Data {
 #if canImport(UIKit)
-        let controller = UIHostingController(rootView: view.frame(width: size.width, height: size.height))
+        let controller = UIHostingController(rootView: view
+            .frame(width: size.width, height: size.height)
+            .ignoresSafeArea())
         let v = controller.view!
+        v.frame = CGRect(origin: .zero, size: size)
         v.bounds = CGRect(origin: .zero, size: size)
+        v.isOpaque = true
         v.backgroundColor = .white
-        let renderer = UIGraphicsPDFRenderer(bounds: v.bounds)
+        let pageBounds = CGRect(origin: .zero, size: size)
+        let renderer = UIGraphicsPDFRenderer(bounds: pageBounds)
         return renderer.pdfData { ctx in
             ctx.beginPage()
-            v.drawHierarchy(in: v.bounds, afterScreenUpdates: true)
+            if let cg = UIGraphicsGetCurrentContext() {
+                v.layer.render(in: cg)
+            }
         }
 #else
         // macOS fallback: render SwiftUI view into a bitmap, then into a single-page PDF
@@ -52,3 +64,4 @@ enum PDFRenderer {
 #endif
     }
 }
+

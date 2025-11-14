@@ -349,6 +349,103 @@ private struct XLSXEntry {
     let data: Data
 }
 
+// MARK: - Debugging Extensions
+
+extension ExcelFormulaFixer {
+    /// Analyzes an Excel file and returns diagnostic information
+    /// Useful for debugging formula calculation issues
+    static func diagnose(_ xlsxData: Data) -> ExcelDiagnostics {
+        do {
+            let entries = try unzipXLSX(xlsxData)
+            
+            var diagnostics = ExcelDiagnostics(
+                fileSize: xlsxData.count,
+                entryCount: entries.count,
+                hasWorkbook: entries.contains(where: { $0.path == "xl/workbook.xml" }),
+                hasCalcChain: entries.contains(where: { $0.path == "xl/calcChain.xml" }),
+                worksheetCount: entries.filter { $0.path.hasPrefix("xl/worksheets/sheet") }.count
+            )
+            
+            // Analyze workbook.xml
+            if let workbook = entries.first(where: { $0.path == "xl/workbook.xml" }),
+               let xml = String(data: workbook.data, encoding: .utf8) {
+                diagnostics.calcMode = extractCalcMode(from: xml)
+                diagnostics.hasCalcPr = xml.contains("<calcPr")
+            }
+            
+            return diagnostics
+            
+        } catch {
+            return ExcelDiagnostics(
+                fileSize: xlsxData.count,
+                entryCount: 0,
+                hasWorkbook: false,
+                hasCalcChain: false,
+                worksheetCount: 0,
+                error: error.localizedDescription
+            )
+        }
+    }
+    
+    private static func extractCalcMode(from xml: String) -> String? {
+        if let range = xml.range(of: #"calcMode="([^"]*)""#, options: .regularExpression) {
+            let match = String(xml[range])
+            let parts = match.split(separator: "\"")
+            return parts.count > 1 ? String(parts[1]) : nil
+        }
+        return nil
+    }
+}
+
+struct ExcelDiagnostics {
+    let fileSize: Int
+    let entryCount: Int
+    let hasWorkbook: Bool
+    let hasCalcChain: Bool
+    let worksheetCount: Int
+    var calcMode: String?
+    var hasCalcPr: Bool = false
+    var error: String?
+    
+    var needsFormulaFix: Bool {
+        // Needs fix if calcMode is manual, or if calcPr exists, or if calcChain exists
+        return calcMode == "manual" || hasCalcPr || hasCalcChain
+    }
+    
+    var description: String {
+        var lines = [
+            "📊 Excel File Diagnostics",
+            "  Size: \(ByteCountFormatter.string(fromByteCount: Int64(fileSize), countStyle: .file))",
+            "  Entries: \(entryCount)",
+            "  Worksheets: \(worksheetCount)"
+        ]
+        
+        if let mode = calcMode {
+            lines.append("  Calc Mode: \(mode)")
+        }
+        
+        if hasCalcPr {
+            lines.append("  ⚠️ Has calcPr (may prevent auto-calc)")
+        }
+        
+        if hasCalcChain {
+            lines.append("  ⚠️ Has calcChain (may be stale)")
+        }
+        
+        if needsFormulaFix {
+            lines.append("  🔧 Needs formula fix: YES")
+        } else {
+            lines.append("  ✅ Needs formula fix: NO")
+        }
+        
+        if let error = error {
+            lines.append("  ❌ Error: \(error)")
+        }
+        
+        return lines.joined(separator: "\n")
+    }
+}
+
 enum ExcelFixerError: Error, LocalizedError {
     case invalidXML(String)
     case corruptedZIP

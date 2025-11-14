@@ -1,8 +1,12 @@
 //
 //  SendView_NoCollision.swift (Swift 6 fix)
 //
+//  IMPORTANT: When sending multi-week timecards, this view sends ONE request
+//  with ALL entries from ALL selected weeks and the FULL date range.
+//  The API will auto-detect the pay period span and split entries correctly.
+//
 import SwiftUI
-import PDFKit
+import AVFoundation
 #if canImport(MessageUI)
 import MessageUI
 #endif
@@ -11,16 +15,27 @@ struct SendView: View {
     @EnvironmentObject var store: TimecardStore
     @AppStorage("emailSubjectTemplate") private var emailSubjectTemplate: String = ""
     @AppStorage("emailBodyTemplate") private var emailBodyTemplate: String = ""
+    @AppStorage("useGoAPIForEmail") private var useGoAPIForEmail: Bool = false // NEW: Toggle for Go API email
     @State private var pdfData = Data()
+    @State private var excelData = Data() // New: Store API-generated Excel data
     @State private var showMail = false
     @State private var showShare = false
+    @State private var showEmailMethodPicker = false // NEW: Show email method picker
     @State private var previewRefreshID = UUID()
     @State private var zoom: CGFloat = 1.1
     @State private var isPanning: Bool = true
     @State private var pinchScale: CGFloat = 1.0
     @State private var ubiObserver: NSObjectProtocol? = nil
     @State private var attachWeeks: [Bool] = []
+    @State private var isGeneratingFiles = false // New: Track API call status
+    @State private var isSendingEmail = false // NEW: Track email sending status
+    @State private var apiError: String? = nil // New: Show API errors
+    @State private var successMessage: String? = nil // NEW: Show success messages
     @FocusState private var isInputFocused: Bool
+    @StateObject private var apiService = TimecardAPIService.shared
+    
+    // Page size constant for preview (matches Go PDF output)
+    private let a4Landscape = CGSize(width: 842.0, height: 595.0)
 
     var body: some View {
         NavigationView {
@@ -39,34 +54,22 @@ struct SendView: View {
                     HStack(spacing: spacing) {
                         // Send button
                         Button {
-                            if store.attachPDF {
-                                pdfData = PDFRenderer.render(view: AnyView(TimecardPDFView(weekOffset: store.selectedWeekIndex).environmentObject(store)),
-                                                             size: PDFRenderer.a4Landscape)
-                            } else {
-                                pdfData = Data()
+                            guard !isGeneratingFiles && !isSendingEmail else { return }
+                            Task {
+                                await generateAndSendFiles()
                             }
-
-                            var additionalAttachmentURLs: [URL] = []
-                            if store.attachCSV, let xlsURL = exportEntriesExcelURL() {
-                                additionalAttachmentURLs.append(xlsURL)
-                            }
-
-                            self.syncEmail(
-                                recipients: store.emailRecipients,
-                                subjectTemplate: emailSubjectTemplate.isEmpty ? nil : emailSubjectTemplate,
-                                bodyTemplate: emailBodyTemplate.isEmpty ? nil : emailBodyTemplate
-                            )
-
-                            #if canImport(MessageUI)
-                            if MFMailComposeViewController.canSendMail() { showMail = true } else { showShare = true }
-                            #else
-                            showShare = true
-                            #endif
                         } label: {
-                            Image(systemName: "envelope.badge")
-                                .font(.system(size: 16, weight: .semibold))
-                                .frame(width: itemWidth, height: itemHeight)
+                            if isGeneratingFiles || isSendingEmail {
+                                ProgressView()
+                                    .scaleEffect(0.8)
+                                    .frame(width: 16, height: 16)
+                            } else {
+                                Image(systemName: "envelope.badge")
+                                    .font(.system(size: 16, weight: .semibold))
+                            }
                         }
+                        .frame(width: itemWidth, height: itemHeight)
+                        .disabled(isGeneratingFiles || isSendingEmail)
                         .buttonStyle(.borderedProminent)
                         .controlSize(.small)
                         .buttonBorderShape(.capsule)
@@ -148,6 +151,50 @@ struct SendView: View {
 
                 Text("If Mail isn't available, the share sheet will open instead.")
                     .font(.footnote).foregroundColor(.secondary)
+                
+                // Email Method Toggle
+                HStack {
+                    Text("Email Method:")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Picker("", selection: $useGoAPIForEmail) {
+                        Text("iOS Mail").tag(false)
+                        Text("Go API").tag(true)
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 200)
+                }
+                .padding(.horizontal)
+                
+                // Success/Error Messages
+                if let success = successMessage {
+                    HStack {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                        Text(success)
+                            .font(.caption)
+                            .foregroundColor(.green)
+                    }
+                    .padding(.horizontal)
+                    .onTapGesture {
+                        successMessage = nil
+                    }
+                }
+                
+                // API Error Display
+                if let error = apiError {
+                    HStack {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(.red)
+                        Text(error)
+                            .font(.caption)
+                            .foregroundColor(.red)
+                    }
+                    .padding(.horizontal)
+                    .onTapGesture {
+                        apiError = nil
+                    }
+                }
 
                 Spacer()
             }
@@ -210,11 +257,7 @@ struct SendView: View {
                                attachmentData: (store.attachPDF ? pdfData : nil),
                                mimeType: "application/pdf",
                                fileName: fileName(),
-                               additionalFileURLs: {
-                                   var urls: [URL] = []
-                                   if store.attachCSV, let u = exportEntriesExcelURL() { urls.append(u) }
-                                   return urls
-                               }())
+                               additionalFileURLs: getAdditionalAttachmentURLs())
             }
             #endif
 
@@ -253,23 +296,185 @@ struct SendView: View {
             }
         }
     }
+    
+    // MARK: - New API Integration Functions
+    
+    @MainActor
+    private func generateAndSendFiles() async {
+        // Prevent duplicate requests
+        guard !isGeneratingFiles && !isSendingEmail else { 
+            print("⚠️ Already processing a request, ignoring duplicate")
+            return 
+        }
+        
+        isGeneratingFiles = true
+        apiError = nil
+        successMessage = nil
+        
+        defer {
+            isGeneratingFiles = false
+            isSendingEmail = false
+        }
+        
+        do {
+            // Determine which weeks to process
+            let count = min(4, max(1, store.payPeriodWeeks))
+            let selectedWeeks: [Int] = {
+                var idxs: [Int] = []
+                for i in 0..<count {
+                    if i < attachWeeks.count, attachWeeks[i] { idxs.append(i) }
+                }
+                return idxs.isEmpty ? [store.selectedWeekIndex] : idxs
+            }()
+            
+            // FIXED: Collect ALL entries from ALL selected weeks FIRST
+            var allEntries: [EntryModel] = []
+            var earliestDate: Date?
+            var latestDate: Date?
+            
+            for weekIndex in selectedWeeks {
+                let range = store.weekRange(offset: weekIndex)
+                let entries = store.entries(in: range)
+                
+                if !entries.isEmpty {
+                    // Track the full date range across all selected weeks
+                    if earliestDate == nil || range.lowerBound < earliestDate! {
+                        earliestDate = range.lowerBound
+                    }
+                    if latestDate == nil || range.upperBound > latestDate! {
+                        latestDate = range.upperBound
+                    }
+                    
+                    // Convert Entry objects to EntryModel objects and add to collection
+                    let entryModels = entries.map { entry in
+                        EntryModel(
+                            id: entry.id,
+                            date: entry.date,
+                            jobNumber: entry.jobNumber,
+                            code: entry.code,
+                            hours: entry.hours,
+                            notes: entry.notes,
+                            isOvertime: entry.isOvertime,
+                            isNightShift: entry.isNightShift
+                        )
+                    }
+                    allEntries.append(contentsOf: entryModels)
+                }
+            }
+            
+            // FIXED: Send ONE request with ALL entries and the FULL date range
+            if !allEntries.isEmpty, let startDate = earliestDate, let endDate = latestDate {
+                
+                // Check if we should use Go API for email or iOS Mail
+                if useGoAPIForEmail {
+                    // Use Go API to send email directly
+                    isSendingEmail = true
+                    try await apiService.emailTimecard(
+                        employeeName: store.employeeName.isEmpty ? "Employee" : store.employeeName,
+                        emailRecipients: store.emailRecipients,
+                        ccRecipients: [],
+                        subject: computedSubject(),
+                        body: computedBody(),
+                        entries: allEntries,
+                        weekStart: startDate,
+                        weekEnd: endDate,
+                        weekNumber: selectedWeeks.first ?? 0 + 1,
+                        totalWeeks: store.payPeriodWeeks,
+                        ppNumber: store.payPeriodNumber
+                    )
+                    isSendingEmail = false
+                    successMessage = "✅ Email sent successfully via API"
+                    SoundEffects.play(.send, overrideSilent: true)
+                    
+                    // Clear success message after 3 seconds
+                    Task {
+                        try? await Task.sleep(nanoseconds: 3_000_000_000)
+                        successMessage = nil
+                    }
+                    
+                } else {
+                    // Use iOS Mail composer - generate files first
+                    let (excelData, pdfData) = try await apiService.generateTimecardFiles(
+                        employeeName: store.employeeName.isEmpty ? "Employee" : store.employeeName,
+                        emailRecipients: store.emailRecipients,
+                        entries: allEntries,
+                        weekStart: startDate,
+                        weekEnd: endDate,
+                        weekNumber: selectedWeeks.first ?? 0 + 1,
+                        totalWeeks: store.payPeriodWeeks,
+                        ppNumber: store.payPeriodNumber
+                    )
+                    
+                    // Store the generated files from Go API
+                    self.excelData = excelData
+                    self.pdfData = pdfData
+                    
+                    print("📦 Files generated - Excel: \(excelData.count) bytes, PDF: \(pdfData.count) bytes")
+                    
+                    // Sync email settings
+                    self.syncEmail(
+                        recipients: store.emailRecipients,
+                        subjectTemplate: emailSubjectTemplate.isEmpty ? nil : emailSubjectTemplate,
+                        bodyTemplate: emailBodyTemplate.isEmpty ? nil : emailBodyTemplate
+                    )
+                    
+                    // Show mail or share sheet
+                    #if canImport(MessageUI)
+                    if MFMailComposeViewController.canSendMail() {
+                        showMail = true
+                    } else {
+                        SoundEffects.play(.send, overrideSilent: true)
+                        showShare = true
+                    }
+                    #else
+                    SoundEffects.play(.send, overrideSilent: true)
+                    showShare = true
+                    #endif
+                }
+                
+            } else {
+                // No entries to send
+                apiError = "No entries found for selected weeks"
+            }
+            
+        } catch {
+            apiError = error.localizedDescription
+            print("❌ Error generating/sending files: \(error)")
+        }
+    }
 
     private func fileName() -> String {
         let emp = (store.employeeName.isEmpty ? "Employee" : store.employeeName).replacingOccurrences(of: " ", with: "_")
         return "Timecard_\(emp)_\(store.weekStart.fileSafeDate()).pdf"
     }
-    private func tempURL() -> URL {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent(fileName())
-        try? pdfData.write(to: url, options: .atomic)
+    
+    private func excelFileName() -> String {
+        let emp = (store.employeeName.isEmpty ? "Employee" : store.employeeName).replacingOccurrences(of: " ", with: "_")
+        return "Timecard_\(emp)_\(store.weekStart.fileSafeDate()).xlsx"
+    }
+    
+    private func tempURL(data: Data, filename: String) -> URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
+        try? data.write(to: url, options: .atomic)
         return url
+    }
+    
+    private func tempURL() -> URL {
+        return tempURL(data: pdfData, filename: fileName())
     }
     private func shareActivityItems() -> [Any] {
         var items: [Any] = []
-        if store.attachPDF {
-            let pdf = tempURL()
+        if store.attachPDF && !pdfData.isEmpty {
+            let pdf = tempURL(data: pdfData, filename: fileName())
             items.append(pdf)
         }
-        if store.attachCSV, let u = exportEntriesExcelURL() { items.append(u) }
+        if store.attachCSV && !excelData.isEmpty {
+            let excel = tempURL(data: excelData, filename: excelFileName())
+            items.append(excel)
+        } else if store.attachCSV, let u = exportEntriesExcelURL() {
+            // Fallback to local Excel generation
+            items.append(u)
+        }
         return items
     }
 
@@ -307,6 +512,19 @@ struct SendView: View {
 
         // Mirror to iCloud KVS if available via helper
         UbiquitousSettingsSync.shared.pushEmail(recipients: recipients, subjectTemplate: subjectTemplate, bodyTemplate: bodyTemplate)
+    }
+    
+    private func getAdditionalAttachmentURLs() -> [URL] {
+        var urls: [URL] = []
+        if store.attachCSV && !excelData.isEmpty {
+            // Use API-generated Excel file
+            let url = tempURL(data: excelData, filename: excelFileName())
+            urls.append(url)
+        } else if store.attachCSV, let u = exportEntriesExcelURL() {
+            // Fallback to local Excel generation
+            urls.append(u)
+        }
+        return urls
     }
     
     private func exportEntriesExcelURL() -> URL? {
@@ -352,6 +570,9 @@ struct TimecardPreviewPane: View {
     @Binding var pinchScale: CGFloat
     @Binding var isPanning: Bool
     let previewRefreshID: UUID
+    
+    // Page size constant for preview (matches Go PDF output)
+    private let a4Landscape = CGSize(width: 842.0, height: 595.0)
 
     var body: some View {
         GroupBox(label: Label("Timecard Preview", systemImage: "doc.text.magnifyingglass")) {
@@ -374,14 +595,24 @@ struct TimecardPreviewPane: View {
                         if metrics.hasValidSize {
                             // Fixed-size page content at 1x; use scaleEffect to fit
                             ZStack(alignment: .topLeading) {
+                                let borderInset: CGFloat = 12
+                                let innerWidth = metrics.page.width - (borderInset * 2)
+                                let innerHeight = metrics.page.height - (borderInset * 2)
+                                let contentScale = min(innerWidth / metrics.page.width, innerHeight / metrics.page.height)
+
                                 Rectangle()
                                     .fill(Color.white)
+                                    .overlay(
+                                        Rectangle().stroke(Color.black, lineWidth: 1)
+                                    )
                                     .frame(width: metrics.page.width, height: metrics.page.height)
                                     .fixedSize()
 
                                 TimecardPDFView(weekOffset: store.selectedWeekIndex)
                                     .environmentObject(store)
                                     .frame(width: metrics.page.width, height: metrics.page.height)
+                                    .scaleEffect(contentScale, anchor: .topLeading)
+                                    .offset(x: borderInset, y: borderInset)
                                     .id(previewRefreshID)
                                     .fixedSize()
                             }
@@ -421,12 +652,13 @@ struct TimecardPreviewPane: View {
             }
             .frame(minHeight: 380, maxHeight: 500)
         }
+        .groupBoxStyle(DefaultGroupBoxStyle())
         .padding(.top, 2)
         .padding(.bottom, 8)
     }
 
     private func computeMetrics(availSize: CGSize) -> (page: CGSize, avail: CGSize, baseScale: CGFloat, effectiveScale: CGFloat, scaled: CGSize, hasValidSize: Bool) {
-        let page = PDFRenderer.a4Landscape
+        let page = a4Landscape
 
         // Protect against zero/negative geometry and non-finite values
         let availW = max(0, availSize.width - 16)
@@ -501,7 +733,12 @@ struct MailComposer: UIViewControllerRepresentable {
         func mailComposeController(_ controller: MFMailComposeViewController,
                                    didFinishWith result: MFMailComposeResult,
                                    error: Error?) {
-            controller.dismiss(animated: true) { self.parent.isShowing = false }
+            controller.dismiss(animated: true) {
+                self.parent.isShowing = false
+                if error == nil && result == .sent {
+                    SoundEffects.play(.send, overrideSilent: true)
+                }
+            }
         }
     }
 }

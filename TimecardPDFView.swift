@@ -58,17 +58,17 @@ struct TimecardPDFView: View {
         if category == .stat {
             return "Stat"
         }
-        // No prefix for job numbers - keep them as is
+        // Do NOT prefix job number with "N"; the N prefix belongs on the labour code
         return entry.jobNumber
     }
     
     private func displayJobNumber(for entry: Entry) -> String {
-        // No prefix for job numbers in overtime table - keep them as is
+        // Do NOT prefix job number with "N"; the N prefix belongs on the labour code
         return entry.jobNumber
     }
-    
-    private func displayLaborCode(for entry: Entry) -> String {
-        // Add "N" prefix to labor code for night shift entries
+
+    private func displayLabourCode(for entry: Entry) -> String {
+        // Prefix labour code with "N" when this entry is marked as a night shift
         if entry.isNightShift {
             return "N\(entry.code)"
         }
@@ -149,18 +149,19 @@ struct TimecardPDFView: View {
         // Pull thresholds from the current overtime policy
         let policy = store.overtimePolicy
         let regularCap = policy.dailyRegularCap ?? Double.greatestFiniteMagnitude
-        let otCap = policy.dailyOTCap ?? regularCap // if nil, no daily OT tier
+        let otUpper = policy.dailyOTCap ?? regularCap // upper bound of OT band
+        let dtStart = policy.dailyDTCap ?? otUpper    // DT starts after this
 
-        // Compute OT and DT from daily totals using policy thresholds
+        // Compute OT as hours between regularCap and dtStart; DT as hours after dtStart
         let overtime: Double
         let doubleTime: Double
-        if policy.dailyRegularCap == nil && policy.dailyOTCap == nil {
-            // No daily rules (e.g., US federal weekly-only). Show 0 here; weekly handled elsewhere if needed.
+        if policy.dailyRegularCap == nil && policy.dailyOTCap == nil && policy.dailyDTCap == nil {
+            // No daily rules (weekly-only)
             overtime = 0
             doubleTime = 0
         } else {
-            overtime = max(0.0, min(totalHours, otCap) - regularCap)
-            doubleTime = max(0.0, totalHours - otCap)
+            overtime = max(0.0, min(totalHours, dtStart) - regularCap)
+            doubleTime = max(0.0, totalHours - dtStart)
         }
 
         return (overtime: overtime, doubleTime: doubleTime)
@@ -235,10 +236,7 @@ struct TimecardPDFView: View {
         let total = weekDates.reduce(0.0) { sum, d in
             let key = Calendar.current.startOfDay(for: d)
             let policy = policyMap[key] ?? (0,0)
-            let explicit = explicitCappedOTDT(for: d)
-            let combinedOT = explicit.ot + policy.ot
-            let cappedOT = min(combinedOT, 4.0)
-            return sum + cappedOT
+            return sum + min(policy.ot, 4.0)
         }
         return total > 0 ? formatHours(total) : ""
     }
@@ -248,11 +246,7 @@ struct TimecardPDFView: View {
         let total = weekDates.reduce(0.0) { sum, d in
             let key = Calendar.current.startOfDay(for: d)
             let policy = policyMap[key] ?? (0,0)
-            let explicit = explicitCappedOTDT(for: d)
-            let combinedOT = explicit.ot + policy.ot
-            let combinedDT = explicit.dt + policy.dt
-            let overflowToDT = max(0.0, combinedOT - 4.0)
-            return sum + combinedDT + overflowToDT
+            return sum + policy.dt
         }
         return total > 0 ? formatHours(total) : ""
     }
@@ -276,10 +270,8 @@ struct TimecardPDFView: View {
                 let dayStart = calendar.startOfDay(for: d)
                 guard payRange.contains(dayStart) else { continue }
                 let policy = policyMap[dayStart] ?? (0,0)
-                let explicit = explicitCappedOTDT(for: dayStart)
-                let combinedOT = explicit.ot + policy.ot
-                let cappedOT = min(combinedOT, 4.0)
-                totalOT += cappedOT
+                // Use policy OT capped at 4h per day; OC is already included in the policy via daily totals
+                totalOT += min(policy.ot, 4.0)
             }
         }
 
@@ -301,11 +293,8 @@ struct TimecardPDFView: View {
                 let dayStart = calendar.startOfDay(for: d)
                 guard payRange.contains(dayStart) else { continue }
                 let policy = policyMap[dayStart] ?? (0,0)
-                let explicit = explicitCappedOTDT(for: dayStart)
-                let combinedOT = explicit.ot + policy.ot
-                let combinedDT = explicit.dt + policy.dt
-                let overflowToDT = max(0.0, combinedOT - 4.0)
-                totalDT += combinedDT + overflowToDT
+                // OC contributions are already reflected in policy DT via daily totals
+                totalDT += policy.dt
             }
         }
 
@@ -515,19 +504,29 @@ struct TimecardPDFView: View {
             }
             let worked = entries.reduce(0.0) { sum, e in
                 let cat: PayCategory = e.isNightShift ? .night : store.category(for: e.code)
-                // Only count actual worked categories toward OT/DT (regular and night). Exclude vacation/stat/onCall.
-                if cat == .regular || cat == .night { return sum + e.hours } else { return sum }
+                // Count all worked categories toward daily OT/DT calculation (regular, night, ot, dt, onCall)
+                if cat == .regular || cat == .night || cat == .ot || cat == .dt || cat == .onCall { 
+                    return sum + e.hours 
+                } else { 
+                    return sum 
+                }
             }
             dayWorked[start] = worked
         }
 
-        // Step 2: apply daily rules (OT > 8 up to 12; DT > 12)
+        // Step 2: apply daily rules using overtime policy
         var result: [Date: (ot: Double, dt: Double)] = [:]
         for d in weekDates {
             let key = cal.startOfDay(for: d)
             let hours = dayWorked[key] ?? 0
-            let dailyOT = max(0.0, min(hours, 12.0) - 8.0) // up to 4 hours
-            let dailyDT = max(0.0, hours - 12.0)
+            
+            // Use store's overtime policy thresholds
+            let regularCap = store.overtimePolicy.dailyRegularCap ?? Double.greatestFiniteMagnitude
+            let otUpper = store.overtimePolicy.dailyOTCap ?? regularCap
+            let dtStart = store.overtimePolicy.dailyDTCap ?? otUpper
+            
+            let dailyOT = max(0.0, min(hours, dtStart) - regularCap)
+            let dailyDT = max(0.0, hours - dtStart)
             result[key] = (ot: dailyOT, dt: dailyDT)
         }
 
@@ -537,30 +536,33 @@ struct TimecardPDFView: View {
             let hours = dayWorked[sKey] ?? 0
             // Ensure at least hours are counted as OT (but keep any DT already computed)
             let current = result[sKey] ?? (0,0)
-            let ensuredOT = max(current.ot, max(0.0, min(hours, 12.0)))
+            let dtStart = store.overtimePolicy.dailyDTCap ?? (store.overtimePolicy.dailyOTCap ?? Double.greatestFiniteMagnitude)
+            let ensuredOT = max(current.ot, max(0.0, min(hours, dtStart)))
             let dt = current.dt
             result[sKey] = (ot: ensuredOT, dt: dt)
         }
 
-        // Step 4: Weekly rule: hours over 40 become OT after daily rules
-        let totalWorked = dayWorked.values.reduce(0.0, +)
-        let weeklyExcess = max(0.0, totalWorked - 40.0)
-        if weeklyExcess > 0 {
-            var remaining = weeklyExcess
-            // Allocate from end of week backward so later days get weekly OT first
-            for d in weekDates.reversed() {
-                if remaining <= 0 { break }
-                let key = cal.startOfDay(for: d)
-                let hours = dayWorked[key] ?? 0
-                var current = result[key] ?? (0,0)
-                // Regular capacity left on this day after daily OT/DT
-                let alreadyOTDT = current.ot + current.dt
-                let regLeft = max(0.0, hours - alreadyOTDT)
-                if regLeft > 0 {
-                    let allocation = min(regLeft, remaining)
-                    current.ot += allocation
-                    remaining -= allocation
-                    result[key] = current
+        // Step 4: Weekly rule: hours over weekly cap become OT after daily rules
+        if let weeklyCap = store.overtimePolicy.weeklyRegularCap {
+            let totalWorked = dayWorked.values.reduce(0.0, +)
+            let weeklyExcess = max(0.0, totalWorked - weeklyCap)
+            if weeklyExcess > 0 {
+                var remaining = weeklyExcess
+                // Allocate from end of week backward so later days get weekly OT first
+                for d in weekDates.reversed() {
+                    if remaining <= 0 { break }
+                    let key = cal.startOfDay(for: d)
+                    let hours = dayWorked[key] ?? 0
+                    var current = result[key] ?? (0,0)
+                    // Regular capacity left on this day after daily OT/DT
+                    let alreadyOTDT = current.ot + current.dt
+                    let regLeft = max(0.0, hours - alreadyOTDT)
+                    if regLeft > 0 {
+                        let allocation = min(regLeft, remaining)
+                        current.ot += allocation
+                        remaining -= allocation
+                        result[key] = current
+                    }
                 }
             }
         }
@@ -582,165 +584,165 @@ struct TimecardPDFView: View {
         _ = store.totals(for: store.weekRange(offset: weekOffset))
         let year = Calendar.current.component(.year, from: weekDates.first ?? store.weekStart)
 
-        return ZStack {
-            Color.white
-
-            VStack(spacing: 0) {
-                // Header
-                HStack(alignment: .top, spacing: 0) {
-                    // Left side - Logo and Employee info combined
-                    HStack(spacing: 20) {
-                        // Logo
-                        Group {
-                            if let img = store.companyLogoImage {
-                                img.resizable()
-                            } else {
-                                Image(store.companyLogoName ?? "logo").resizable()
-                            }
-                        }
-                        .scaledToFit()
-                        .frame(width: 40, height: 40)
-                        
-                        // Employee info
-                        HStack(spacing: 8) { // Added spacing between fields
-                            // Employee field
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Employee")
-                                    .font(.system(size: 11))
-                                    .bold()
-                                Rectangle()
-                                    .fill(Color.clear)
-                                    .frame(height: 20)
-                                    .overlay(
-                                        VStack(spacing: 0) {
-                                            Text(store.employeeName)
-                                                .font(.system(size: 10))
-                                                .padding(.horizontal, 4)
-                                                .frame(maxWidth: .infinity, alignment: .leading)
-                                            Spacer()
-                                            Rectangle()
-                                                .fill(Color.black)
-                                                .frame(height: 1)
-                                        }
-                                    )
-                            }
-                            .frame(width: 280)
-                            
-                            // PP # field
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("PP #")
-                                    .font(.system(size: 11))
-                                    .bold()
-                                    .frame(maxWidth: .infinity, alignment: .center)
-                                Rectangle()
-                                    .fill(Color.clear)
-                                    .frame(height: 20)
-                                    .overlay(
-                                        VStack(spacing: 0) {
-                                            Text(String(store.payPeriodNumber))
-                                                .font(.system(size: 10))
-                                                .padding(.horizontal, 4)
-                                                .frame(maxWidth: .infinity, alignment: .center)
-                                            Spacer()
-                                            Rectangle()
-                                                .fill(Color.black)
-                                                .frame(height: 1)
-                                        }
-                                    )
-                            }
-                            .frame(width: 80)
-                            
-                            // Year field
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("YEAR")
-                                    .font(.system(size: 11))
-                                    .bold()
-                                    .frame(maxWidth: .infinity, alignment: .center)
-                                Rectangle()
-                                    .fill(Color.clear)
-                                    .frame(height: 20)
-                                    .overlay(
-                                        VStack(spacing: 0) {
-                                            Text(String(year))
-                                                .font(.system(size: 10))
-                                                .padding(.horizontal, 4)
-                                                .frame(maxWidth: .infinity, alignment: .center)
-                                            Spacer()
-                                            Rectangle()
-                                                .fill(Color.black)
-                                                .frame(height: 1)
-                                        }
-                                    )
-                            }
-                            .frame(width: 80)
+        return VStack(spacing: 0) {
+            // Header
+            HStack(alignment: .top, spacing: 0) {
+                // Left side - Logo and Employee info combined
+                HStack(spacing: 20) {
+                    // Logo
+                    Group {
+                        if let img = store.companyLogoImage {
+                            img.resizable()
+                        } else {
+                            Image(store.companyLogoName ?? "logo").resizable()
                         }
                     }
+                    .scaledToFit()
+                    .frame(width: 44, height: 44)
                     
-                    Spacer()
-                }
-                .padding(.horizontal, margin)
-                .padding(.top, margin)
-                .frame(height: 60)
-
-                // Main content - Compact layout with minimal spacing
-                ZStack(alignment: .bottomTrailing) {
-                    // Left side - Main timesheet tables
-                    VStack(alignment: .leading, spacing: 0) {
-                        // Regular Time section
-                        HStack {
-                            Text("Regular Time")
-                                .font(.system(size: 12, weight: .bold))
-                            Spacer()
+                    // Employee info
+                    HStack(spacing: 8) { // Added spacing between fields
+                        // Employee field
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Employee")
+                                .font(.custom("Arial", size: 11))
+                                .bold()
+                            Rectangle()
+                                .fill(Color.clear)
+                                .frame(height: 20)
+                                .overlay(
+                                    VStack(spacing: 0) {
+                                        Text(store.employeeName)
+                                            .font(.custom("Arial", size: 10))
+                                            .padding(.horizontal, 4)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                        Spacer()
+                                        Rectangle()
+                                            .fill(Color.black)
+                                            .frame(height: 1)
+                                    }
+                                )
                         }
-                        .padding(.bottom, 4)
+                        .frame(width: 280)
                         
-                        // Regular time table
-                        regularTimeTable(weekDates: weekDates, weekdaysShort: weekdaysShort, df: df)
-                        
-                        Spacer().frame(height: 12)
-                        
-                        // Overtime & Double-Time section
-                        HStack {
-                            Text("Overtime & Double-Time")
-                                .font(.system(size: 12, weight: .bold))
-                            Spacer()
+                        // PP # field
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("PP #")
+                                .font(.custom("Arial", size: 11))
+                                .bold()
+                                .frame(maxWidth: .infinity, alignment: .center)
+                            Rectangle()
+                                .fill(Color.clear)
+                                .frame(height: 20)
+                                .overlay(
+                                    VStack(spacing: 0) {
+                                        Text(String(store.payPeriodNumber))
+                                            .font(.custom("Arial", size: 10))
+                                            .padding(.horizontal, 4)
+                                            .frame(maxWidth: .infinity, alignment: .center)
+                                        Spacer()
+                                        Rectangle()
+                                            .fill(Color.black)
+                                            .frame(height: 1)
+                                    }
+                                )
                         }
-                        .padding(.bottom, 4)
+                        .frame(width: 80)
                         
-                        overtimeTable(weekDates: weekDates, weekdaysShort: weekdaysShort, df: df)
+                        // Year field
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("YEAR")
+                                .font(.custom("Arial", size: 11))
+                                .bold()
+                                .frame(maxWidth: .infinity, alignment: .center)
+                            Rectangle()
+                                .fill(Color.clear)
+                                .frame(height: 20)
+                                .overlay(
+                                    VStack(spacing: 0) {
+                                        Text(String(year))
+                                            .font(.custom("Arial", size: 10))
+                                            .padding(.horizontal, 4)
+                                            .frame(maxWidth: .infinity, alignment: .center)
+                                        Spacer()
+                                        Rectangle()
+                                            .fill(Color.black)
+                                            .frame(height: 1)
+                                    }
+                                )
+                        }
+                        .frame(width: 80)
                     }
-                    .padding(.leading, margin)
-                    .padding(.trailing, tableRightInset) // nudge tables left to align right edge with Summary panel
-
-                    // Summary Totals (only show on last week of pay period), aligned to the right edge of the tables
-                    if weekOffset == max(0, (store.payPeriodWeeks - 1)) {
-                        VStack(spacing: 0) {
-                            Text("Summary Totals")
-                                .font(.system(size: 10, weight: .bold))
-                                .frame(width: 90, height: 20)
-                                .background(Color.gray.opacity(0.3))
-                                .overlay(Rectangle().stroke(Color.black, lineWidth: 1))
-                            
-                            summaryRow("Regular Time:", payPeriodRegularPlusStatAlways(), width: 90)
-                            summaryRow("OT:", payPeriodCappedOT(), width: 90)
-                            summaryRow("DT:", payPeriodCappedDT(), width: 90)
-                            summaryRow("VP:", totalHoursForPayPeriod(type: .vacation), width: 90)
-                            summaryRow("NS:", totalHoursForPayPeriod(type: .night), width: 90)
-                            summaryRow("STAT:", totalHoursForPayPeriod(type: .stat), width: 90)
-                            if store.onCallEnabled {
-                                summaryRow("On Call:", payPeriodOnCallStipendAlways(), width: 90)
-                                summaryRow("# of On Call", payPeriodOnCallCountAlways(), width: 90)
-                            }
-                        }
-                        .padding(.trailing, margin + summaryHorizontalShift) // shift left toward red-box area
-                        .padding(.bottom, margin)   // small bottom margin from the tables
-                    }
                 }
-
+                
                 Spacer()
             }
-            .frame(width: pageSize.width, height: pageSize.height)
+            .padding(.horizontal, margin)
+            .padding(.top, 6)
+            .frame(height: 56)
+
+            // Main content - Compact layout with minimal spacing
+            ZStack(alignment: .bottomTrailing) {
+                // Left side - Main timesheet tables
+                VStack(alignment: .leading, spacing: 0) {
+                    // Regular Time section
+                    HStack {
+                        Text("Regular Time")
+                            .font(.custom("Arial", size: 8))
+                            .bold()
+                        Spacer()
+                    }
+                    .padding(.bottom, 4)
+                    
+                    // Regular time table
+                    regularTimeTable(weekDates: weekDates, weekdaysShort: weekdaysShort, df: df)
+                    
+                    Spacer().frame(height: 12)
+                    
+                    // Overtime & Double-Time section
+                    HStack {
+                        Text("Overtime & Double-Time")
+                            .font(.custom("Arial", size: 8, relativeTo: .body))
+                            .bold()
+                        Spacer()
+                    }
+                    .padding(.bottom, 4)
+                    
+                    overtimeTable(weekDates: weekDates, weekdaysShort: weekdaysShort, df: df)
+                }
+                .padding(.leading, margin)
+                .padding(.trailing, tableRightInset) // nudge tables left to align right edge with Summary panel
+
+                // Summary Totals (only show on last week of pay period), aligned to the right edge of the tables
+                if weekOffset == max(0, (store.payPeriodWeeks - 1)) {
+                    VStack(spacing: 0) {
+                        Text("Summary Totals")
+                            .font(.custom("Arial", size: 10, relativeTo: .body))
+                            .bold()
+                            .frame(width: 90, height: 20)
+                            .background(Color.white)
+                            .overlay(Rectangle().stroke(Color.black, lineWidth: 1))
+                        
+                        summaryRow("Regular Time:", payPeriodRegularPlusStatAlways(), width: 90)
+                        summaryRow("OT:", payPeriodCappedOT(), width: 90)
+                        summaryRow("DT:", payPeriodCappedDT(), width: 90)
+                        summaryRow("VP:", totalHoursForPayPeriod(type: .vacation), width: 90)
+                        summaryRow("NS:", totalHoursForPayPeriod(type: .night), width: 90)
+                        summaryRow("STAT:", totalHoursForPayPeriod(type: .stat), width: 90)
+                        if store.onCallEnabled {
+                            summaryRow("On Call:", payPeriodOnCallStipendAlways(), width: 90)
+                            summaryRow("# of On Call", payPeriodOnCallCountAlways(), width: 90)
+                        }
+                    }
+                    .padding(.trailing, margin + summaryHorizontalShift) // shift left toward red-box area
+                    .padding(.bottom, margin)   // small bottom margin from the tables
+                }
+            }
+
+            Spacer()
         }
+        .background(Color.white)
+        .frame(width: pageSize.width, height: pageSize.height)
     }
     
     // MARK: - Regular Time Table
@@ -757,10 +759,10 @@ struct TimecardPDFView: View {
                 // Sun Date header
                 VStack(alignment: .center, spacing: 1) {
                     Text("Sun")
-                        .font(.system(size: 8))
+                        .font(.custom("Arial", size: 8))
                         .bold()
                     Text("Date")
-                        .font(.system(size: 8))
+                        .font(.custom("Arial", size: 8))
                         .bold()
                 }
                 .frame(width: dayColumnWidth, height: 60)
@@ -769,7 +771,7 @@ struct TimecardPDFView: View {
                 
                 // Date header
                 Text(df.string(from: weekDates[0]))
-                    .font(.system(size: 8))
+                    .font(.custom("Arial", size: 8))
                     .bold()
                     .frame(width: dateColumnWidth, height: 60)
                     .background(Color.white)
@@ -779,7 +781,7 @@ struct TimecardPDFView: View {
                 ForEach(0..<14, id: \.self) { colIndex in
                     // Get unique job/code combinations for the week including regular and night entries
                     let allEntries = weekDates.flatMap { regularEntriesFor(day: $0) + nightEntriesFor(day: $0) }
-                    let uniqueEntries = Array(Set(allEntries.map { "\(displayJobText(for: $0))|\(displayLaborCode(for: $0))" }))
+                    let uniqueEntries = Array(Set(allEntries.map { "\(displayJobText(for: $0))|\(displayLabourCode(for: $0))" }))
                         .sorted()
                         .map { combo -> (jobDisplay: String, code: String) in
                             let parts = combo.split(separator: "|", omittingEmptySubsequences: false)
@@ -795,10 +797,10 @@ struct TimecardPDFView: View {
                     
                     VStack(alignment: .leading, spacing: 2) {
                         Text(labourCode.isEmpty ? "Labour Code:" : padToLength(labourCode, length: 10))
-                            .font(.system(size: 7, weight: .regular, design: .monospaced))
+                            .font(.custom("Arial", size: 7))
                             .foregroundColor(.black)
                         Text(jobDisplay.isEmpty ? "Job:" : padToLength(jobDisplay, length: 10))
-                            .font(.system(size: 7, weight: .regular, design: .monospaced))
+                            .font(.custom("Arial", size: 7))
                             .foregroundColor(.black)
                     }
                     .frame(width: 60, height: laborCodeColumnWidth, alignment: .trailing)
@@ -814,10 +816,10 @@ struct TimecardPDFView: View {
                 // Shift Hours header
                 VStack(spacing: 1) {
                     Text("Shift")
-                        .font(.system(size: 7))
+                        .font(.custom("Arial", size: 7))
                         .bold()
                     Text("Hours")
-                        .font(.system(size: 7))
+                        .font(.custom("Arial", size: 7))
                         .bold()
                 }
                 .frame(width: shiftHoursWidth, height: 60)
@@ -826,7 +828,8 @@ struct TimecardPDFView: View {
                 
                 // Notes header replaced with only the week label text (no "Regular Time:")
                 Text(weekNumberString)
-                    .font(.system(size: 14, weight: .bold))
+                    .font(.custom("Arial", size: 14))
+                    .bold()
                     .frame(width: notesWidth, height: 60)
                     .background(Color.white)
                     .overlay(Rectangle().stroke(Color.black, lineWidth: 1))
@@ -844,7 +847,7 @@ struct TimecardPDFView: View {
                     // Day column
                     VStack(alignment: .center, spacing: 1) {
                         Text(weekdaysShort[i])
-                            .font(.system(size: 8))
+                            .font(.custom("Arial", size: 8))
                             .bold()
                     }
                     .frame(width: dayColumnWidth, height: 22)
@@ -853,7 +856,7 @@ struct TimecardPDFView: View {
                     
                     // Date column
                     Text(df.string(from: weekDates[i]))
-                        .font(.system(size: 8))
+                        .font(.custom("Arial", size: 8))
                         .frame(width: dateColumnWidth, height: 22)
                         .background(Color.white)
                         .overlay(Rectangle().stroke(Color.black, lineWidth: 1))
@@ -862,7 +865,7 @@ struct TimecardPDFView: View {
                     ForEach(0..<14, id: \.self) { colIndex in
                         // Get unique job/code combinations for the week including regular and night entries
                         let allEntries = weekDates.flatMap { regularEntriesFor(day: $0) + nightEntriesFor(day: $0) }
-                        let uniqueEntries = Array(Set(allEntries.map { "\(displayJobText(for: $0))|\(displayLaborCode(for: $0))" }))
+                        let uniqueEntries = Array(Set(allEntries.map { "\(displayJobText(for: $0))|\(displayLabourCode(for: $0))" }))
                             .sorted()
                             .map { combo -> (jobDisplay: String, code: String) in
                                 let parts = combo.split(separator: "|", omittingEmptySubsequences: false)
@@ -876,14 +879,14 @@ struct TimecardPDFView: View {
                         
                         // Find matching entry for this day and column
                         let matchingEntry = dayEntries.first { entry in
-                            displayJobText(for: entry) == columnJobDisplay && displayLaborCode(for: entry) == columnLabourCode
+                            displayJobText(for: entry) == columnJobDisplay && displayLabourCode(for: entry) == columnLabourCode
                         }
                         
                         ZStack(alignment: .center) {
                             if let entry = matchingEntry {
                                 // Display hours worked centered
                                 Text(formatHours(entry.hours))
-                                    .font(.system(size: 8))
+                                    .font(.custom("Arial", size: 8))
                                     .lineLimit(1)
                                     .bold()
                             }
@@ -896,7 +899,7 @@ struct TimecardPDFView: View {
                     // Shift hours column - display total hours for day (3)
                     ZStack(alignment: .center) {
                         Text(dayTotalHours > 0 ? formatHours(dayTotalHours) : "")
-                            .font(.system(size: 8))
+                            .font(.custom("Arial", size: 8))
                     }
                     .frame(width: shiftHoursWidth, height: 22)
                     .background(Color.white)
@@ -908,7 +911,8 @@ struct TimecardPDFView: View {
                             Color.white
                             HStack(spacing: 4) {
                                 Text("Office Use Only Table")
-                                    .font(.system(size: 10, weight: .bold))
+                                    .font(.custom("Arial", size: 10))
+                                    .bold()
                                     .frame(maxWidth: .infinity, alignment: .center)
                                     .padding(.leading, 0)
                             }
@@ -920,11 +924,11 @@ struct TimecardPDFView: View {
                             Color.white
                             HStack {
                                 Text("Reg Time:")
-                                    .font(.system(size: 8))
+                                    .font(.custom("Arial", size: 8))
                                     .frame(width: 70, alignment: .leading)
                                     .padding(.leading, 4)
                                 Text(totalRegularTableHoursForWeek())
-                                    .font(.system(size: 8))
+                                    .font(.custom("Arial", size: 8))
                                     .frame(maxWidth: .infinity, alignment: .center)
                             }
                         }
@@ -935,11 +939,11 @@ struct TimecardPDFView: View {
                             Color.white
                             HStack {
                                 Text("OT:")
-                                    .font(.system(size: 8))
+                                    .font(.custom("Arial", size: 8))
                                     .frame(width: 70, alignment: .leading)
                                     .padding(.leading, 4)
                                 Text(weeklyOTForNotes(weekDates: weekDates))
-                                    .font(.system(size: 8))
+                                    .font(.custom("Arial", size: 8))
                                     .frame(maxWidth: .infinity, alignment: .center)
                             }
                         }
@@ -950,11 +954,11 @@ struct TimecardPDFView: View {
                             Color.white
                             HStack {
                                 Text("DT:")
-                                    .font(.system(size: 8))
+                                    .font(.custom("Arial", size: 8))
                                     .frame(width: 70, alignment: .leading)
                                     .padding(.leading, 4)
                                 Text(weeklyDTForNotes(weekDates: weekDates))
-                                    .font(.system(size: 8))
+                                    .font(.custom("Arial", size: 8))
                                     .frame(maxWidth: .infinity, alignment: .center)
                             }
                         }
@@ -965,11 +969,11 @@ struct TimecardPDFView: View {
                             Color.white
                             HStack {
                                 Text("VP:")
-                                    .font(.system(size: 8))
+                                    .font(.custom("Arial", size: 8))
                                     .frame(width: 70, alignment: .leading)
                                     .padding(.leading, 4)
                                 Text(totalHoursFor(type: .vacation))
-                                    .font(.system(size: 8))
+                                    .font(.custom("Arial", size: 8))
                                     .frame(maxWidth: .infinity, alignment: .center)
                             }
                         }
@@ -980,11 +984,11 @@ struct TimecardPDFView: View {
                             Color.white
                             HStack {
                                 Text("NS:")
-                                    .font(.system(size: 8))
+                                    .font(.custom("Arial", size: 8))
                                     .frame(width: 70, alignment: .leading)
                                     .padding(.leading, 4)
                                 Text(totalHoursFor(type: .night))
-                                    .font(.system(size: 8))
+                                    .font(.custom("Arial", size: 8))
                                     .frame(maxWidth: .infinity, alignment: .center)
                             }
                         }
@@ -995,11 +999,11 @@ struct TimecardPDFView: View {
                             Color.white
                             HStack {
                                 Text("STAT:")
-                                    .font(.system(size: 8))
+                                    .font(.custom("Arial", size: 8))
                                     .frame(width: 70, alignment: .leading)
                                     .padding(.leading, 4)
                                 Text(totalHoursFor(type: .stat))
-                                    .font(.system(size: 8))
+                                    .font(.custom("Arial", size: 8))
                                     .frame(maxWidth: .infinity, alignment: .center)
                             }
                         }
@@ -1019,7 +1023,7 @@ struct TimecardPDFView: View {
             // Total Regular row
             HStack(spacing: 0) {
                 Text("Regular Time:")
-                    .font(.system(size: 8))
+                    .font(.custom("Arial", size: 8))
                     .bold()
                     .frame(width: dayColumnWidth + dateColumnWidth, height: 18)
                     .background(Color.white)
@@ -1029,7 +1033,7 @@ struct TimecardPDFView: View {
                 ForEach(0..<14, id: \.self) { colIndex in
                     // Get unique job/code combinations for the week including regular and night entries
                     let allEntries = weekDates.flatMap { regularEntriesFor(day: $0) + nightEntriesFor(day: $0) }
-                    let uniqueEntries = Array(Set(allEntries.map { "\(displayJobText(for: $0))|\(displayLaborCode(for: $0))" }))
+                    let uniqueEntries = Array(Set(allEntries.map { "\(displayJobText(for: $0))|\(displayLabourCode(for: $0))" }))
                         .sorted()
                         .map { combo -> (jobDisplay: String, code: String) in
                             let parts = combo.split(separator: "|", omittingEmptySubsequences: false)
@@ -1046,7 +1050,7 @@ struct TimecardPDFView: View {
                         // ** Keep only regular entries here for totals (no change) **
                         let dayEntries = regularEntriesFor(day: date)
                         let matchingEntry = dayEntries.first { entry in
-                            displayJobText(for: entry) == columnJobDisplay && displayLaborCode(for: entry) == columnLabourCode
+                            displayJobText(for: entry) == columnJobDisplay && displayLabourCode(for: entry) == columnLabourCode
                         }
                         return total + (matchingEntry?.hours ?? 0.0)
                     }
@@ -1062,39 +1066,45 @@ struct TimecardPDFView: View {
                 }
                 
                 Text(totalRegularTableHoursForWeek())
-                    .font(.system(size: 8))
+                    .font(.custom("Arial", size: 8))
                     .bold()
                     .frame(width: shiftHoursWidth, height: 18)
                     .background(Color.white)
                     .overlay(Rectangle().stroke(Color.black, lineWidth: 1))
                 
-                ZStack {
-                    Color.white
-                    HStack {
-                        Text("On Call:")
-                            .font(.system(size: 8))
-                            .frame(width: 70, alignment: .leading)
-                            .padding(.leading, 4)
-                        Text(weekOnCallAmountString())
-                            .font(.system(size: 8))
-                            .frame(maxWidth: .infinity, alignment: .center)
+                if store.onCallEnabled {
+                    ZStack {
+                        Color.white
+                        HStack {
+                            Text("On Call:")
+                                .font(.custom("Arial", size: 8))
+                                .frame(width: 70, alignment: .leading)
+                                .padding(.leading, 4)
+                            Text(weekOnCallAmountString())
+                                .font(.custom("Arial", size: 8))
+                                .frame(maxWidth: .infinity, alignment: .center)
+                        }
                     }
+                    .frame(width: notesWidth, height: 18)
+                    .overlay(Rectangle().stroke(Color.black, lineWidth: 1))
+                } else {
+                    ZStack { Color.white }
+                        .frame(width: notesWidth, height: 18)
+                        .overlay(Rectangle().stroke(Color.black, lineWidth: 1))
                 }
-                .frame(width: notesWidth, height: 18)
-                .overlay(Rectangle().stroke(Color.black, lineWidth: 1))
             }
             
             // Total Night row
             HStack(spacing: 0) {
                 Text("TOTAL NIGHT")
-                    .font(.system(size: 8))
+                    .font(.custom("Arial", size: 8))
                     .bold()
                     .frame(width: dayColumnWidth + dateColumnWidth, height: 18)
                     .background(Color.white)
                     .overlay(Rectangle().stroke(Color.black, lineWidth: 1))
                 ForEach(0..<14, id: \.self) { colIndex in
                     let allEntries = weekDates.flatMap { regularEntriesFor(day: $0) + nightEntriesFor(day: $0) }
-                    let uniqueEntries = Array(Set(allEntries.map { "\(displayJobText(for: $0))|\(displayLaborCode(for: $0))" }))
+                    let uniqueEntries = Array(Set(allEntries.map { "\(displayJobText(for: $0))|\(displayLabourCode(for: $0))" }))
                         .sorted()
                         .map { combo -> (jobDisplay: String, code: String) in
                             let parts = combo.split(separator: "|", omittingEmptySubsequences: false)
@@ -1107,7 +1117,7 @@ struct TimecardPDFView: View {
                     let columnTotal = weekDates.reduce(0.0) { total, date in
                         let dayEntries = nightEntriesFor(day: date)
                         let matchingEntry = dayEntries.first { entry in
-                            displayJobText(for: entry) == columnJobDisplay && displayLaborCode(for: entry) == columnLabourCode
+                            displayJobText(for: entry) == columnJobDisplay && displayLabourCode(for: entry) == columnLabourCode
                         }
                         return total + (matchingEntry?.hours ?? 0.0)
                     }
@@ -1121,25 +1131,31 @@ struct TimecardPDFView: View {
                     .overlay(Rectangle().stroke(Color.black, lineWidth: 1))
                 }
                 Text(totalHoursFor(type: .night))
-                    .font(.system(size: 8))
+                    .font(.custom("Arial", size: 8))
                     .bold()
                     .frame(width: shiftHoursWidth, height: 18)
                     .background(Color.white)
                     .overlay(Rectangle().stroke(Color.black, lineWidth: 1))
-                ZStack {
-                    Color.white
-                    HStack {
-                        Text("# On Call:")
-                            .font(.system(size: 8))
-                            .frame(width: 70, alignment: .leading)
-                            .padding(.leading, 4)
-                        Text(weekOnCallCountString())
-                            .font(.system(size: 8))
-                            .frame(maxWidth: .infinity, alignment: .center)
+                if store.onCallEnabled {
+                    ZStack {
+                        Color.white
+                        HStack {
+                            Text("# On Call:")
+                                .font(.custom("Arial", size: 8))
+                                .frame(width: 70, alignment: .leading)
+                                .padding(.leading, 4)
+                            Text(weekOnCallCountString())
+                                .font(.custom("Arial", size: 8))
+                                .frame(maxWidth: .infinity, alignment: .center)
+                        }
                     }
+                    .frame(width: notesWidth, height: 18)
+                    .overlay(Rectangle().stroke(Color.black, lineWidth: 1))
+                } else {
+                    ZStack { Color.white }
+                        .frame(width: notesWidth, height: 18)
+                        .overlay(Rectangle().stroke(Color.black, lineWidth: 1))
                 }
-                .frame(width: notesWidth, height: 18)
-                .overlay(Rectangle().stroke(Color.black, lineWidth: 1))
             }
         }
     }
@@ -1159,7 +1175,7 @@ struct TimecardPDFView: View {
             HStack(spacing: 0) {
                 // Date header
                 Text("Date:")
-                    .font(.system(size: 8))
+                    .font(.custom("Arial", size: 8))
                     .bold()
                     .frame(width: dayColumnWidth, height: 60)
                     .background(Color.white)
@@ -1167,7 +1183,7 @@ struct TimecardPDFView: View {
                 
                 // Date value
                 Text(df.string(from: weekDates[0]))
-                    .font(.system(size: 8))
+                    .font(.custom("Arial", size: 8))
                     .bold()
                     .frame(width: dateColumnWidth, height: 60)
                     .background(Color.white)
@@ -1177,7 +1193,7 @@ struct TimecardPDFView: View {
                 ForEach(0..<8, id: \.self) { colIndex in
                     // Get unique job/code combinations for the week
                     let allOvertimeEntries = weekDates.flatMap { overtimeEntriesFor(day: $0) }
-                    let uniqueEntries = Array(Set(allOvertimeEntries.map { "\(displayJobNumber(for: $0))|\(displayLaborCode(for: $0))" }))
+                    let uniqueEntries = Array(Set(allOvertimeEntries.map { "\(displayJobNumber(for: $0))|\(displayLabourCode(for: $0))" }))
                         .sorted()
                         .map { combo -> (jobNumber: String, code: String) in
                             let parts = combo.split(separator: "|", omittingEmptySubsequences: false)
@@ -1193,10 +1209,10 @@ struct TimecardPDFView: View {
                     
                     VStack(alignment: .leading, spacing: 2) {
                         Text(labourCode.isEmpty ? "Labour Code:" : padToLength(labourCode, length: 10))
-                            .font(.system(size: 7, weight: .regular, design: .monospaced))
+                            .font(.custom("Arial", size: 7))
                             .foregroundColor(.black)
                         Text(jobNumber.isEmpty ? "Job:" : padToLength(jobNumber, length: 8))
-                            .font(.system(size: 7, weight: .regular, design: .monospaced))
+                            .font(.custom("Arial", size: 7))
                             .foregroundColor(.black)
                     }
                     .frame(width: 60, height: laborCodeColumnWidth, alignment: .trailing)
@@ -1211,7 +1227,7 @@ struct TimecardPDFView: View {
                 
                 // Overtime header
                 Text("Overtime")
-                    .font(.system(size: 7))
+                    .font(.custom("Arial", size: 7))
                     .bold()
                     .lineLimit(1)
                     .multilineTextAlignment(.center)
@@ -1223,7 +1239,7 @@ struct TimecardPDFView: View {
                 
                 // Double-Time header
                 Text("Double Time")
-                    .font(.system(size: 7))
+                    .font(.custom("Arial", size: 7))
                     .bold()
                     .lineLimit(1)
                     .multilineTextAlignment(.center)
@@ -1237,23 +1253,18 @@ struct TimecardPDFView: View {
             // Week rows
             ForEach(0..<7, id: \.self) { i in
                 let day = weekDates[i]
+                // Calculate day overtime hours using policy rules (8/12 hour daily limits)
                 let dayOvertimeEntries: [Entry] = overtimeEntriesFor(day: day)
                 let policy = policyMap[Calendar.current.startOfDay(for: day)] ?? (0,0)
                 
-                // Updated per instructions: add explicitOnCallHours to OT total calculation
-                let explicit = explicitCappedOTDT(for: day)
-                // Changed per instructions: removed adding onCall hours here
-                // Apply OT cap of 4 hours and roll excess into DT
-                let combinedOT = explicit.ot + policy.ot
-                let combinedDT = explicit.dt + policy.dt
-                let overflowToDT = max(0.0, combinedOT - 4.0)
-                let dayOvertimeHours = min(combinedOT, 4.0)
-                let dayDoubleTimeHours = combinedDT + overflowToDT
+                // Use policy-derived values so any OC pushing the day past 12h becomes DT
+                let dayOvertimeHours = min(policy.ot, 4.0)
+                let dayDoubleTimeHours = policy.dt
                 
                 HStack(spacing: 0) {
                     // Day column
                     Text(weekdaysShort[i])
-                        .font(.system(size: 8))
+                        .font(.custom("Arial", size: 8))
                         .bold()
                         .frame(width: dayColumnWidth, height: 22)
                         .background(Color.white)
@@ -1261,7 +1272,7 @@ struct TimecardPDFView: View {
                     
                     // Date column
                     Text(df.string(from: weekDates[i]))
-                        .font(.system(size: 8))
+                        .font(.custom("Arial", size: 8))
                         .frame(width: dateColumnWidth, height: 22)
                         .background(Color.white)
                         .overlay(Rectangle().stroke(Color.black, lineWidth: 1))
@@ -1270,7 +1281,7 @@ struct TimecardPDFView: View {
                     ForEach(0..<8, id: \.self) { colIndex in
                         // Get unique job/code combinations for the week
                         let allOvertimeEntries = weekDates.flatMap { overtimeEntriesFor(day: $0) }
-                        let uniqueEntries = Array(Set(allOvertimeEntries.map { "\(displayJobNumber(for: $0))|\(displayLaborCode(for: $0))" }))
+                        let uniqueEntries = Array(Set(allOvertimeEntries.map { "\(displayJobNumber(for: $0))|\(displayLabourCode(for: $0))" }))
                             .sorted()
                             .map { combo -> (jobNumber: String, code: String) in
                                 let parts = combo.split(separator: "|", omittingEmptySubsequences: false)
@@ -1284,14 +1295,14 @@ struct TimecardPDFView: View {
                         
                         // Find matching entry for this day and column
                         let matchingEntry = dayOvertimeEntries.first { entry in
-                            displayJobNumber(for: entry) == columnJobNumber && displayLaborCode(for: entry) == columnLabourCode
+                            displayJobNumber(for: entry) == columnJobNumber && displayLabourCode(for: entry) == columnLabourCode
                         }
                         
                         ZStack(alignment: .center) {
                             if let entry = matchingEntry {
                                 // Display hours worked centered
                                 Text(formatHours(entry.hours))
-                                    .font(.system(size: 8))
+                                    .font(.custom("Arial", size: 8))
                                     .lineLimit(1)
                                     .bold()
                             }
@@ -1304,7 +1315,7 @@ struct TimecardPDFView: View {
                     // Overtime column - centered
                     ZStack(alignment: .center) {
                         Text(dayOvertimeHours > 0 ? formatHours(dayOvertimeHours) : "")
-                            .font(.system(size: 8))
+                            .font(.custom("Arial", size: 8))
                     }
                     .frame(width: overtimeWidth, height: 22)
                     .background(Color.white)
@@ -1313,7 +1324,7 @@ struct TimecardPDFView: View {
                     // Double-Time column - centered
                     ZStack(alignment: .center) {
                         Text(dayDoubleTimeHours > 0 ? formatHours(dayDoubleTimeHours) : "")
-                            .font(.system(size: 8))
+                            .font(.custom("Arial", size: 8))
                     }
                     .frame(width: doubleTimeWidth, height: 22)
                     .background(Color.white)
@@ -1325,7 +1336,7 @@ struct TimecardPDFView: View {
             HStack(spacing: 0) {
                 // Label spanning the first two columns (day + date)
                 Text("TOTAL OVERTIME")
-                    .font(.system(size: 8))
+                    .font(.custom("Arial", size: 8))
                     .bold()
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.leading, 4)
@@ -1337,7 +1348,7 @@ struct TimecardPDFView: View {
                 ForEach(0..<8, id: \.self) { colIndex in
                     // Get unique job/code combinations for the week
                     let allOvertimeEntries = weekDates.flatMap { overtimeEntriesFor(day: $0) }
-                    let uniqueEntries = Array(Set(allOvertimeEntries.map { "\(displayJobNumber(for: $0))|\(displayLaborCode(for: $0))" }))
+                    let uniqueEntries = Array(Set(allOvertimeEntries.map { "\(displayJobNumber(for: $0))|\(displayLabourCode(for: $0))" }))
                         .sorted()
                         .map { combo -> (jobNumber: String, code: String) in
                             let parts = combo.split(separator: "|", omittingEmptySubsequences: false)
@@ -1353,7 +1364,7 @@ struct TimecardPDFView: View {
                     let columnTotal = weekDates.reduce(0.0) { total, date in
                         let dayEntries = overtimeEntriesFor(day: date)
                         let matchingEntry = dayEntries.first { entry in
-                            displayJobNumber(for: entry) == columnJobNumber && displayLaborCode(for: entry) == columnLabourCode
+                            displayJobNumber(for: entry) == columnJobNumber && displayLabourCode(for: entry) == columnLabourCode
                         }
                         return total + (matchingEntry?.hours ?? 0.0)
                     }
@@ -1368,33 +1379,27 @@ struct TimecardPDFView: View {
                     .overlay(Rectangle().stroke(Color.black, lineWidth: 1))
                 }
                 
-                // Updated weeklyOTTotal to exclude on-call hours as per instructions
+                // Calculate total overtime hours using policy rules (matching daily calculations)
                 let weeklyOTTotal = weekDates.reduce(0.0) { sum, d in
                     let key = Calendar.current.startOfDay(for: d)
                     let policy = policyMap[key] ?? (0,0)
-                    let explicit = explicitCappedOTDT(for: d)
-                    let combinedOT = explicit.ot + policy.ot
-                    let cappedOT = min(combinedOT, 4.0)
-                    return sum + cappedOT
+                    return sum + min(policy.ot, 4.0)
                 }
-                Text(formatHours(weeklyOTTotal))
-                    .font(.system(size: 8))
+                Text(weeklyOTTotal > 0 ? formatHours(weeklyOTTotal) : "")
+                    .font(.custom("Arial", size: 8))
                     .bold()
                     .frame(width: overtimeWidth, height: 18)
                     .background(Color.white)
                     .overlay(Rectangle().stroke(Color.black, lineWidth: 1))
                 
+                // Calculate total double-time hours (for consistency, using policy-based calculation as DT is more complex)
                 let weeklyDTTotal = weekDates.reduce(0.0) { sum, d in
                     let key = Calendar.current.startOfDay(for: d)
                     let policy = policyMap[key] ?? (0,0)
-                    let explicit = explicitCappedOTDT(for: d)
-                    let combinedOT = explicit.ot + policy.ot
-                    let combinedDT = explicit.dt + policy.dt
-                    let overflowToDT = max(0.0, combinedOT - 4.0)
-                    return sum + combinedDT + overflowToDT
+                    return sum + policy.dt
                 }
-                Text(formatHours(weeklyDTTotal))
-                    .font(.system(size: 8))
+                Text(weeklyDTTotal > 0 ? formatHours(weeklyDTTotal) : "")
+                    .font(.custom("Arial", size: 8))
                     .bold()
                     .frame(width: doubleTimeWidth, height: 18)
                     .background(Color.white)
@@ -1406,7 +1411,7 @@ struct TimecardPDFView: View {
                 // Merged Day + Date cell with label
                 HStack {
                     Text("Approved by:")
-                        .font(.system(size: 8))
+                        .font(.custom("Arial", size: 8))
                         .padding(.leading, 4)
                     Spacer()
                 }
@@ -1442,11 +1447,11 @@ struct TimecardPDFView: View {
 private func summaryRow(_ label: String, _ value: String, width: CGFloat) -> some View {
     HStack(spacing: 0) {
         Text(label)
-            .font(.system(size: 8))
+            .font(.custom("Arial", size: 8))
             .frame(width: 60, alignment: .leading)
             .padding(.leading, 4)
         Text(value)
-            .font(.system(size: 8))
+            .font(.custom("Arial", size: 8))
             .frame(maxWidth: .infinity, alignment: .center)
     }
     .frame(width: width, height: 16)
@@ -1457,7 +1462,3 @@ private func summaryRow(_ label: String, _ value: String, width: CGFloat) -> som
     TimecardPDFView()
         .environmentObject(TimecardStore.sampleStore)
 }
-
-
-
-
