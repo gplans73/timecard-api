@@ -1,0 +1,32 @@
+# Git
+.git
+.gitignore
+
+# Documentation
+*.md
+CHANGES_SUMMARY.md
+DEPLOY_NOW.md
+IMPLEMENTATION_COMPLETE.md
+LIBREOFFICE_DEPLOYMENT.md
+
+# macOS
+.DS_Store
+
+# Images/screenshots
+*.jpg
+*.png
+frame_*
+
+# Build artifacts
+main
+*.exe
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Copies and backups
+Copy of *
+*_backup*
