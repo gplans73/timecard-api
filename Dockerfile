@@ -1,13 +1,13 @@
-# Multi-stage build for Go app with LibreOffice
-FROM golang:1.23-bookworm AS builder
+# Build stage
+FROM golang:1.21-alpine AS builder
 
-# Set working directory
 WORKDIR /app
+
+# Install build dependencies
+RUN apk add --no-cache git
 
 # Copy go mod files
 COPY go.mod go.sum ./
-
-# Download dependencies
 RUN go mod download
 
 # Copy source code
@@ -16,26 +16,24 @@ COPY . .
 # Build the application
 RUN CGO_ENABLED=0 GOOS=linux go build -o main .
 
-# Final stage - smaller image with LibreOffice
-FROM debian:bookworm-slim
+# Final stage with LibreOffice for PDF conversion
+FROM alpine:latest
 
-# Install LibreOffice (headless version for PDF conversion)
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-    libreoffice-calc \
-    libreoffice-writer \
-    && rm -rf /var/lib/apt/lists/*
+# Install LibreOffice and dependencies for PDF conversion
+RUN apk add --no-cache \
+    libreoffice \
+    openjdk11-jre \
+    ttf-dejavu \
+    fontconfig \
+    && fc-cache -f
 
-# Set working directory
 WORKDIR /app
 
-# Copy built binary from builder
+# Copy binary and template from builder
 COPY --from=builder /app/main .
+COPY template.xlsx .
 
-# Copy template file
-COPY --from=builder /app/template.xlsx .
-
-# Expose port (Render uses PORT env variable)
+# Expose port (Render will set PORT env var)
 EXPOSE 8080
 
 # Run the application
