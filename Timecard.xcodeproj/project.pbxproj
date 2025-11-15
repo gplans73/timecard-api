@@ -13,6 +13,8 @@
 		622C9C0C2EBEC19200A49A61 /* go 2.mod in Resources */ = {isa = PBXBuildFile; fileRef = 622C9C0B2EBEC19200A49A61 /* go 2.mod */; };
 		622D46642EBAAB3500342CE1 /* go.mod in Resources */ = {isa = PBXBuildFile; fileRef = 622D46632EBAAB3500342CE1 /* go.mod */; };
 		622D46682EBAAB5000342CE1 /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = 622D46672EBAAB5000342CE1 /* README.md */; };
+		6232CFC32EC7CAF500866105 /* .dockerignore 3 in Resources */ = {isa = PBXBuildFile; fileRef = 6232CFC22EC7CAF500866105 /* .dockerignore 3 */; };
+		6232CFC52EC7CAFD00866105 /* Dockerfile 4 in Resources */ = {isa = PBXBuildFile; fileRef = 6232CFC42EC7CAFD00866105 /* Dockerfile 4 */; };
 		623792A02E986B18004A699C /* ToolbarButtonsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6237929F2E986B18004A699C /* ToolbarButtonsSettingsView.swift */; };
 		623904DD2EA0C36F0090558B /* IconSanityCheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = 623904DC2EA0C36F0090558B /* IconSanityCheck.swift */; };
 		6239DF932EC6B5C600918A2D /* Dockerfile in Resources */ = {isa = PBXBuildFile; fileRef = 6239DF922EC6B5C600918A2D /* Dockerfile */; };
@@ -20,7 +22,6 @@
 		6239DF972EC6EC7E00918A2D /* render.yaml in Resources */ = {isa = PBXBuildFile; fileRef = 6239DF962EC6EC7E00918A2D /* render.yaml */; };
 		623CA1812E971E7B00094FBC /* JobCodeInputView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 623CA1802E971E7B00094FBC /* JobCodeInputView.swift */; };
 		623CA1832E97234400094FBC /* JobCodeKeypad.swift in Sources */ = {isa = PBXBuildFile; fileRef = 623CA1822E97234400094FBC /* JobCodeKeypad.swift */; };
-		624A44202EC678E1003DEC0B /* pdf_converter_alternative.go in Resources */ = {isa = PBXBuildFile; fileRef = 624A441F2EC678E1003DEC0B /* pdf_converter_alternative.go */; };
 		624A44222EC67915003DEC0B /* PDF_CONVERSION_OPTIONS.md in Resources */ = {isa = PBXBuildFile; fileRef = 624A44212EC67915003DEC0B /* PDF_CONVERSION_OPTIONS.md */; };
 		624A44242EC67920003DEC0B /* go.mod.example in Resources */ = {isa = PBXBuildFile; fileRef = 624A44232EC67920003DEC0B /* go.mod.example */; };
 		624A44262EC6793D003DEC0B /* QUICK_START_PDF.md in Resources */ = {isa = PBXBuildFile; fileRef = 624A44252EC6793D003DEC0B /* QUICK_START_PDF.md */; };
@@ -38,7 +39,6 @@
 		624B75962EC12B2400BA6CBC /* TestGoAPI+FormulaFixer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 624B75952EC12B2400BA6CBC /* TestGoAPI+FormulaFixer.swift */; };
 		624B75982EC12B4500BA6CBC /* TestGoAPI-README.md in Resources */ = {isa = PBXBuildFile; fileRef = 624B75972EC12B4500BA6CBC /* TestGoAPI-README.md */; };
 		624F38C52EC56815006BEBF9 /* NIGHT_SHIFT_FIX.md in Resources */ = {isa = PBXBuildFile; fileRef = 624F38C42EC56815006BEBF9 /* NIGHT_SHIFT_FIX.md */; };
-		624F38C72EC5685F006BEBF9 /* GO_BACKEND_NIGHT_SHIFT_FIX.go in Resources */ = {isa = PBXBuildFile; fileRef = 624F38C62EC5685F006BEBF9 /* GO_BACKEND_NIGHT_SHIFT_FIX.go */; };
 		624F38C92EC5687E006BEBF9 /* FIX_SUMMARY.md in Resources */ = {isa = PBXBuildFile; fileRef = 624F38C82EC5687E006BEBF9 /* FIX_SUMMARY.md */; };
 		624F38CB2EC56889006BEBF9 /* test_night_shift_api.sh in Resources */ = {isa = PBXBuildFile; fileRef = 624F38CA2EC56889006BEBF9 /* test_night_shift_api.sh */; };
 		624F38CD2EC5B014006BEBF9 /* NIGHT_SHIFT_FIX_APPLIED.md in Resources */ = {isa = PBXBuildFile; fileRef = 624F38CC2EC5B014006BEBF9 /* NIGHT_SHIFT_FIX_APPLIED.md */; };
@@ -54,7 +54,24 @@
 		627980192EAFFABA009379D4 /* MailSwish.wav in Resources */ = {isa = PBXBuildFile; fileRef = 627980182EAFFABA009379D4 /* MailSwish.wav */; };
 		627CA04E2EA93C6300CC80F3 /* OvertimePolicySettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 627CA04D2EA93C6300CC80F3 /* OvertimePolicySettingsView.swift */; };
 		627CA0502EA93DAA00CC80F3 /* TimeTotals+DiagnosticsShim.swift in Sources */ = {isa = PBXBuildFile; fileRef = 627CA04F2EA93DAA00CC80F3 /* TimeTotals+DiagnosticsShim.swift */; };
+		628E9E0B2EC82B8B005D0C43 /* Dockerfile 5 in Resources */ = {isa = PBXBuildFile; fileRef = 628E9E0A2EC82B8B005D0C43 /* Dockerfile 5 */; };
+		628E9E0D2EC82B90005D0C43 /* .dockerignore 4 in Resources */ = {isa = PBXBuildFile; fileRef = 628E9E0C2EC82B90005D0C43 /* .dockerignore 4 */; };
+		628E9E0F2EC82B95005D0C43 /* .gitignore in Resources */ = {isa = PBXBuildFile; fileRef = 628E9E0E2EC82B95005D0C43 /* .gitignore */; };
+		628E9E112EC82B9D005D0C43 /* render 8.yaml in Resources */ = {isa = PBXBuildFile; fileRef = 628E9E102EC82B9D005D0C43 /* render 8.yaml */; };
 		629046B42E9FF0C30063F1B3 /* AppIconManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 629046B32E9FF0C30063F1B3 /* AppIconManager.swift */; };
+		629F58B12EC7C45B00B31D67 /* render 2.yaml in Resources */ = {isa = PBXBuildFile; fileRef = 629F58B02EC7C45B00B31D67 /* render 2.yaml */; };
+		629F58B32EC7C46300B31D67 /* render 3.yaml in Resources */ = {isa = PBXBuildFile; fileRef = 629F58B22EC7C46300B31D67 /* render 3.yaml */; };
+		629F58B52EC7C46C00B31D67 /* Dockerfile 2 in Resources */ = {isa = PBXBuildFile; fileRef = 629F58B42EC7C46C00B31D67 /* Dockerfile 2 */; };
+		629F58B72EC7C47200B31D67 /* .dockerignore in Resources */ = {isa = PBXBuildFile; fileRef = 629F58B62EC7C47200B31D67 /* .dockerignore */; };
+		629F58B92EC7C47D00B31D67 /* render 4.yaml in Resources */ = {isa = PBXBuildFile; fileRef = 629F58B82EC7C47D00B31D67 /* render 4.yaml */; };
+		629F58BB2EC7C49600B31D67 /* render 5.yaml in Resources */ = {isa = PBXBuildFile; fileRef = 629F58BA2EC7C49600B31D67 /* render 5.yaml */; };
+		629F58BD2EC7C4B800B31D67 /* DEPLOYMENT_FIX.md in Resources */ = {isa = PBXBuildFile; fileRef = 629F58BC2EC7C4B800B31D67 /* DEPLOYMENT_FIX.md */; };
+		629F58BF2EC7C4C900B31D67 /* DEPLOYMENT_ALTERNATIVE.md in Resources */ = {isa = PBXBuildFile; fileRef = 629F58BE2EC7C4C900B31D67 /* DEPLOYMENT_ALTERNATIVE.md */; };
+		629F58C12EC7C51800B31D67 /* Dockerfile 3 in Resources */ = {isa = PBXBuildFile; fileRef = 629F58C02EC7C51800B31D67 /* Dockerfile 3 */; };
+		629F58C32EC7C52300B31D67 /* .dockerignore 2 in Resources */ = {isa = PBXBuildFile; fileRef = 629F58C22EC7C52300B31D67 /* .dockerignore 2 */; };
+		629F58C52EC7C53900B31D67 /* render 6.yaml in Resources */ = {isa = PBXBuildFile; fileRef = 629F58C42EC7C53900B31D67 /* render 6.yaml */; };
+		629F58C72EC7C56A00B31D67 /* DOCKER_DEPLOYMENT.md in Resources */ = {isa = PBXBuildFile; fileRef = 629F58C62EC7C56A00B31D67 /* DOCKER_DEPLOYMENT.md */; };
+		629F58C92EC7C74000B31D67 /* render 7.yaml in Resources */ = {isa = PBXBuildFile; fileRef = 629F58C82EC7C74000B31D67 /* render 7.yaml */; };
 		62A410152E9D8ED600641376 /* PushNotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62A410142E9D8ED600641376 /* PushNotificationManager.swift */; };
 		62A60CE02EBC1C6E00FD1EAE /* main.go.fixed in Resources */ = {isa = PBXBuildFile; fileRef = 62A60CDF2EBC1C6E00FD1EAE /* main.go.fixed */; };
 		62ABAB682EA5653400FB5792 /* TimecardStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62ABAB672EA5653400FB5792 /* TimecardStore.swift */; };
@@ -172,6 +189,8 @@
 		622C9C0B2EBEC19200A49A61 /* go 2.mod */ = {isa = PBXFileReference; lastKnownFileType = text; path = "go 2.mod"; sourceTree = "<group>"; };
 		622D46632EBAAB3500342CE1 /* go.mod */ = {isa = PBXFileReference; lastKnownFileType = text; path = go.mod; sourceTree = "<group>"; };
 		622D46672EBAAB5000342CE1 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
+		6232CFC22EC7CAF500866105 /* .dockerignore 3 */ = {isa = PBXFileReference; lastKnownFileType = text; path = ".dockerignore 3"; sourceTree = "<group>"; };
+		6232CFC42EC7CAFD00866105 /* Dockerfile 4 */ = {isa = PBXFileReference; lastKnownFileType = text; path = "Dockerfile 4"; sourceTree = "<group>"; };
 		6237929F2E986B18004A699C /* ToolbarButtonsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolbarButtonsSettingsView.swift; sourceTree = "<group>"; };
 		623904DC2EA0C36F0090558B /* IconSanityCheck.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconSanityCheck.swift; sourceTree = "<group>"; };
 		6239DF922EC6B5C600918A2D /* Dockerfile */ = {isa = PBXFileReference; lastKnownFileType = text; path = Dockerfile; sourceTree = "<group>"; };
@@ -181,7 +200,6 @@
 		623CA1802E971E7B00094FBC /* JobCodeInputView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JobCodeInputView.swift; sourceTree = "<group>"; };
 		623CA1822E97234400094FBC /* JobCodeKeypad.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JobCodeKeypad.swift; sourceTree = "<group>"; };
 		623EF73B2E8DE9DA008EC7EE /* Timecard.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Timecard.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		624A441F2EC678E1003DEC0B /* pdf_converter_alternative.go */ = {isa = PBXFileReference; lastKnownFileType = text; path = pdf_converter_alternative.go; sourceTree = "<group>"; };
 		624A44212EC67915003DEC0B /* PDF_CONVERSION_OPTIONS.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = PDF_CONVERSION_OPTIONS.md; sourceTree = "<group>"; };
 		624A44232EC67920003DEC0B /* go.mod.example */ = {isa = PBXFileReference; lastKnownFileType = text; path = go.mod.example; sourceTree = "<group>"; };
 		624A44252EC6793D003DEC0B /* QUICK_START_PDF.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = QUICK_START_PDF.md; sourceTree = "<group>"; };
@@ -199,7 +217,6 @@
 		624B75952EC12B2400BA6CBC /* TestGoAPI+FormulaFixer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TestGoAPI+FormulaFixer.swift"; sourceTree = "<group>"; };
 		624B75972EC12B4500BA6CBC /* TestGoAPI-README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "TestGoAPI-README.md"; sourceTree = "<group>"; };
 		624F38C42EC56815006BEBF9 /* NIGHT_SHIFT_FIX.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = NIGHT_SHIFT_FIX.md; sourceTree = "<group>"; };
-		624F38C62EC5685F006BEBF9 /* GO_BACKEND_NIGHT_SHIFT_FIX.go */ = {isa = PBXFileReference; lastKnownFileType = text; path = GO_BACKEND_NIGHT_SHIFT_FIX.go; sourceTree = "<group>"; };
 		624F38C82EC5687E006BEBF9 /* FIX_SUMMARY.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = FIX_SUMMARY.md; sourceTree = "<group>"; };
 		624F38CA2EC56889006BEBF9 /* test_night_shift_api.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = test_night_shift_api.sh; sourceTree = "<group>"; };
 		624F38CC2EC5B014006BEBF9 /* NIGHT_SHIFT_FIX_APPLIED.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = NIGHT_SHIFT_FIX_APPLIED.md; sourceTree = "<group>"; };
@@ -214,7 +231,24 @@
 		627980182EAFFABA009379D4 /* MailSwish.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = MailSwish.wav; sourceTree = "<group>"; };
 		627CA04D2EA93C6300CC80F3 /* OvertimePolicySettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OvertimePolicySettingsView.swift; sourceTree = "<group>"; };
 		627CA04F2EA93DAA00CC80F3 /* TimeTotals+DiagnosticsShim.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TimeTotals+DiagnosticsShim.swift"; sourceTree = "<group>"; };
+		628E9E0A2EC82B8B005D0C43 /* Dockerfile 5 */ = {isa = PBXFileReference; lastKnownFileType = text; path = "Dockerfile 5"; sourceTree = "<group>"; };
+		628E9E0C2EC82B90005D0C43 /* .dockerignore 4 */ = {isa = PBXFileReference; lastKnownFileType = text; path = ".dockerignore 4"; sourceTree = "<group>"; };
+		628E9E0E2EC82B95005D0C43 /* .gitignore */ = {isa = PBXFileReference; lastKnownFileType = text; path = .gitignore; sourceTree = "<group>"; };
+		628E9E102EC82B9D005D0C43 /* render 8.yaml */ = {isa = PBXFileReference; lastKnownFileType = text.yaml; path = "render 8.yaml"; sourceTree = "<group>"; };
 		629046B32E9FF0C30063F1B3 /* AppIconManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconManager.swift; sourceTree = "<group>"; };
+		629F58B02EC7C45B00B31D67 /* render 2.yaml */ = {isa = PBXFileReference; lastKnownFileType = text.yaml; path = "render 2.yaml"; sourceTree = "<group>"; };
+		629F58B22EC7C46300B31D67 /* render 3.yaml */ = {isa = PBXFileReference; lastKnownFileType = text.yaml; path = "render 3.yaml"; sourceTree = "<group>"; };
+		629F58B42EC7C46C00B31D67 /* Dockerfile 2 */ = {isa = PBXFileReference; lastKnownFileType = text; path = "Dockerfile 2"; sourceTree = "<group>"; };
+		629F58B62EC7C47200B31D67 /* .dockerignore */ = {isa = PBXFileReference; lastKnownFileType = text; path = .dockerignore; sourceTree = "<group>"; };
+		629F58B82EC7C47D00B31D67 /* render 4.yaml */ = {isa = PBXFileReference; lastKnownFileType = text.yaml; path = "render 4.yaml"; sourceTree = "<group>"; };
+		629F58BA2EC7C49600B31D67 /* render 5.yaml */ = {isa = PBXFileReference; lastKnownFileType = text.yaml; path = "render 5.yaml"; sourceTree = "<group>"; };
+		629F58BC2EC7C4B800B31D67 /* DEPLOYMENT_FIX.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = DEPLOYMENT_FIX.md; sourceTree = "<group>"; };
+		629F58BE2EC7C4C900B31D67 /* DEPLOYMENT_ALTERNATIVE.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = DEPLOYMENT_ALTERNATIVE.md; sourceTree = "<group>"; };
+		629F58C02EC7C51800B31D67 /* Dockerfile 3 */ = {isa = PBXFileReference; lastKnownFileType = text; path = "Dockerfile 3"; sourceTree = "<group>"; };
+		629F58C22EC7C52300B31D67 /* .dockerignore 2 */ = {isa = PBXFileReference; lastKnownFileType = text; path = ".dockerignore 2"; sourceTree = "<group>"; };
+		629F58C42EC7C53900B31D67 /* render 6.yaml */ = {isa = PBXFileReference; lastKnownFileType = text.yaml; path = "render 6.yaml"; sourceTree = "<group>"; };
+		629F58C62EC7C56A00B31D67 /* DOCKER_DEPLOYMENT.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = DOCKER_DEPLOYMENT.md; sourceTree = "<group>"; };
+		629F58C82EC7C74000B31D67 /* render 7.yaml */ = {isa = PBXFileReference; lastKnownFileType = text.yaml; path = "render 7.yaml"; sourceTree = "<group>"; };
 		62A410142E9D8ED600641376 /* PushNotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushNotificationManager.swift; sourceTree = "<group>"; };
 		62A60CDF2EBC1C6E00FD1EAE /* main.go.fixed */ = {isa = PBXFileReference; lastKnownFileType = text; path = main.go.fixed; sourceTree = "<group>"; };
 		62ABAB672EA5653400FB5792 /* TimecardStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimecardStore.swift; sourceTree = "<group>"; };
@@ -345,11 +379,9 @@
 				6265A6C12EC1353C00D5D8A3 /* EMAIL_IMPLEMENTATION_SUMMARY.md */,
 				6265A6C32EC1354A00D5D8A3 /* SMTP_QUICK_SETUP.md */,
 				624F38C42EC56815006BEBF9 /* NIGHT_SHIFT_FIX.md */,
-				624F38C62EC5685F006BEBF9 /* GO_BACKEND_NIGHT_SHIFT_FIX.go */,
 				624F38C82EC5687E006BEBF9 /* FIX_SUMMARY.md */,
 				624F38CA2EC56889006BEBF9 /* test_night_shift_api.sh */,
 				624F38CC2EC5B014006BEBF9 /* NIGHT_SHIFT_FIX_APPLIED.md */,
-				624A441F2EC678E1003DEC0B /* pdf_converter_alternative.go */,
 				624A44212EC67915003DEC0B /* PDF_CONVERSION_OPTIONS.md */,
 				624A44232EC67920003DEC0B /* go.mod.example */,
 				624A44252EC6793D003DEC0B /* QUICK_START_PDF.md */,
@@ -366,6 +398,25 @@
 				62EB24832EC6831300B175D1 /* CHANGES_SUMMARY.md */,
 				6239DF942EC6B5CC00918A2D /* .dockerignore */,
 				6239DF962EC6EC7E00918A2D /* render.yaml */,
+				629F58B02EC7C45B00B31D67 /* render 2.yaml */,
+				629F58B22EC7C46300B31D67 /* render 3.yaml */,
+				629F58B42EC7C46C00B31D67 /* Dockerfile 2 */,
+				629F58B62EC7C47200B31D67 /* .dockerignore */,
+				629F58B82EC7C47D00B31D67 /* render 4.yaml */,
+				629F58BA2EC7C49600B31D67 /* render 5.yaml */,
+				629F58BC2EC7C4B800B31D67 /* DEPLOYMENT_FIX.md */,
+				629F58BE2EC7C4C900B31D67 /* DEPLOYMENT_ALTERNATIVE.md */,
+				629F58C02EC7C51800B31D67 /* Dockerfile 3 */,
+				629F58C22EC7C52300B31D67 /* .dockerignore 2 */,
+				629F58C42EC7C53900B31D67 /* render 6.yaml */,
+				629F58C62EC7C56A00B31D67 /* DOCKER_DEPLOYMENT.md */,
+				629F58C82EC7C74000B31D67 /* render 7.yaml */,
+				6232CFC22EC7CAF500866105 /* .dockerignore 3 */,
+				6232CFC42EC7CAFD00866105 /* Dockerfile 4 */,
+				628E9E0A2EC82B8B005D0C43 /* Dockerfile 5 */,
+				628E9E0C2EC82B90005D0C43 /* .dockerignore 4 */,
+				628E9E0E2EC82B95005D0C43 /* .gitignore */,
+				628E9E102EC82B9D005D0C43 /* render 8.yaml */,
 			);
 			sourceTree = "<group>";
 		};
@@ -439,18 +490,28 @@
 			buildActionMask = 2147483647;
 			files = (
 				624B75882EC02CF500BA6CBC /* API_INTEGRATION.md in Resources */,
+				629F58C52EC7C53900B31D67 /* render 6.yaml in Resources */,
+				629F58B32EC7C46300B31D67 /* render 3.yaml in Resources */,
 				622C9C0C2EBEC19200A49A61 /* go 2.mod in Resources */,
+				6232CFC32EC7CAF500866105 /* .dockerignore 3 in Resources */,
 				62F8484E2E8C84E10059C024 /* Assets.xcassets in Resources */,
+				629F58B12EC7C45B00B31D67 /* render 2.yaml in Resources */,
+				628E9E112EC82B9D005D0C43 /* render 8.yaml in Resources */,
 				6265A6BE2EC1319A00D5D8A3 /* main.go in Resources */,
 				625E23982EBA7DCF00050B06 /* template.xlsx in Resources */,
 				62EB247C2EC682AD00B175D1 /* render-build.sh in Resources */,
 				6239DF972EC6EC7E00918A2D /* render.yaml in Resources */,
 				6265A6C22EC1353C00D5D8A3 /* EMAIL_IMPLEMENTATION_SUMMARY.md in Resources */,
+				628E9E0F2EC82B95005D0C43 /* .gitignore in Resources */,
 				624B758C2EC02D7F00BA6CBC /* GO_BACKEND_SETUP.md in Resources */,
+				629F58C32EC7C52300B31D67 /* .dockerignore 2 in Resources */,
 				624B75922EC02DF700BA6CBC /* QUICK_REFERENCE.md in Resources */,
 				624F38C52EC56815006BEBF9 /* NIGHT_SHIFT_FIX.md in Resources */,
 				624B758E2EC02DB700BA6CBC /* INTEGRATION_SUMMARY.md in Resources */,
 				62EB24842EC6831300B175D1 /* CHANGES_SUMMARY.md in Resources */,
+				629F58C92EC7C74000B31D67 /* render 7.yaml in Resources */,
+				629F58C72EC7C56A00B31D67 /* DOCKER_DEPLOYMENT.md in Resources */,
+				629F58BF2EC7C4C900B31D67 /* DEPLOYMENT_ALTERNATIVE.md in Resources */,
 				622D46642EBAAB3500342CE1 /* go.mod in Resources */,
 				6265A6C42EC1354A00D5D8A3 /* SMTP_QUICK_SETUP.md in Resources */,
 				624A44242EC67920003DEC0B /* go.mod.example in Resources */,
@@ -459,15 +520,20 @@
 				6239DF932EC6B5C600918A2D /* Dockerfile in Resources */,
 				62B8BC822E90828300F3DBFE /* JobsSeed.csv in Resources */,
 				624A442A2EC67A7F003DEC0B /* GOFPDF_SETUP.md in Resources */,
+				629F58BB2EC7C49600B31D67 /* render 5.yaml in Resources */,
 				624A442E2EC67C96003DEC0B /* BLANK_PDF_FIX.md in Resources */,
+				629F58B52EC7C46C00B31D67 /* Dockerfile 2 in Resources */,
+				629F58B92EC7C47D00B31D67 /* render 4.yaml in Resources */,
 				62EB24802EC682EA00B175D1 /* IMPLEMENTATION_COMPLETE.md in Resources */,
+				629F58C12EC7C51800B31D67 /* Dockerfile 3 in Resources */,
 				62F848362E8C7AAD0059C024 /* README.txt in Resources */,
+				628E9E0D2EC82B90005D0C43 /* .dockerignore 4 in Resources */,
 				624F38CD2EC5B014006BEBF9 /* NIGHT_SHIFT_FIX_APPLIED.md in Resources */,
-				624A44202EC678E1003DEC0B /* pdf_converter_alternative.go in Resources */,
 				6265A6C02EC1351800D5D8A3 /* EMAIL_SETUP.md in Resources */,
 				627980192EAFFABA009379D4 /* MailSwish.wav in Resources */,
 				6239DF952EC6B5CC00918A2D /* .dockerignore in Resources */,
 				62F8484F2E8C84E70059C024 /* Assets.xcassets.zip in Resources */,
+				629F58B72EC7C47200B31D67 /* .dockerignore in Resources */,
 				624F38CB2EC56889006BEBF9 /* test_night_shift_api.sh in Resources */,
 				624A44262EC6793D003DEC0B /* QUICK_START_PDF.md in Resources */,
 				624B75942EC02E0400BA6CBC /* .env.example in Resources */,
@@ -475,11 +541,13 @@
 				62EB247E2EC682D200B175D1 /* LIBREOFFICE_DEPLOYMENT.md in Resources */,
 				62EB24822EC682FE00B175D1 /* DEPLOY_NOW.md in Resources */,
 				62EB247A2EC6802F00B175D1 /* PDF_IMPROVEMENTS.md in Resources */,
-				624F38C72EC5685F006BEBF9 /* GO_BACKEND_NIGHT_SHIFT_FIX.go in Resources */,
 				62A60CE02EBC1C6E00FD1EAE /* main.go.fixed in Resources */,
 				622D46682EBAAB5000342CE1 /* README.md in Resources */,
 				6269EB172E8DB10100012C3F /* Timecard-Info.plist in Resources */,
+				6232CFC52EC7CAFD00866105 /* Dockerfile 4 in Resources */,
+				628E9E0B2EC82B8B005D0C43 /* Dockerfile 5 in Resources */,
 				624A44282EC67968003DEC0B /* PDF_DECISION_GUIDE.md in Resources */,
+				629F58BD2EC7C4B800B31D67 /* DEPLOYMENT_FIX.md in Resources */,
 				624A44222EC67915003DEC0B /* PDF_CONVERSION_OPTIONS.md in Resources */,
 				6265A6BA2EC12F7100D5D8A3 /* GO-API-MULTIWEEK-UPDATE.md in Resources */,
 				624F38C92EC5687E006BEBF9 /* FIX_SUMMARY.md in Resources */,

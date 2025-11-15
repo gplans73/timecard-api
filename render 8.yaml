@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: timecard-api
+    env: docker
+    dockerfilePath: ./Dockerfile
+    plan: free  # Change to 'starter' for $7/month always-on service
+    envVars:
+      - key: PORT
+        value: 8080
+      - key: SMTP_HOST
+        sync: false  # Set manually in Render dashboard
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        sync: false

@@ -259,8 +259,8 @@ struct TimecardPDFView: View {
         var totalOT: Double = 0.0
 
         // Iterate each week in the pay period and use the same logic as the overtime table
-        for w in 0..<weeks {
-            let weekRange = store.weekRange(offset: w)
+        for _ in 0..<weeks {
+            let weekRange = store.weekRange(offset: 0)
             // Build the 7 dates for this week
             let weekDates = (0..<7).compactMap { calendar.date(byAdding: .day, value: $0, to: calendar.startOfDay(for: weekRange.lowerBound)) }
             let policyMap = computeWeekOTDT(weekDates: weekDates)

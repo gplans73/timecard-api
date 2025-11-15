@@ -1155,7 +1155,6 @@ final class TimecardStore: ObservableObject {
         clone.selectedWeekIndex = 0
         
         let calendar = Calendar.current
-        let weekOfYear = calendar.component(.weekOfYear, from: start)
         clone.payPeriodNumber = OddPayPeriodCalc.period(containing: start).numberOdd
         
         let payPeriodEnd = calendar.date(byAdding: .day, value: 13, to: start) ?? start

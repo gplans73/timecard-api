@@ -56,12 +56,18 @@ struct GoEmailTimecardRequest: Codable {
 class TimecardAPIService: ObservableObject {
     static let shared = TimecardAPIService()
     
-    // Your deployed Render.com API URL
-    private let baseURL = "https://timecard-api.onrender.com"
+    // Local backend for testing
+    // Use localhost for Simulator, or your Mac's IP for real devices
+    private let baseURL = "http://192.168.4.187:8080"
     
-    // Use the deployed URL
+    // Production backend on Render
+    private let productionURL = "https://YOUR-APP-NAME.onrender.com"
+    
+    // Switch between local and production
     private var apiBaseURL: String {
-        return baseURL
+        // For production, return productionURL
+        // For local testing, return baseURL
+        return baseURL  // Using local server until production is deployed
     }
     
     private init() {}
