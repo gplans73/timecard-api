@@ -1,11 +1,18 @@
 services:
   - type: web
     name: timecard-api
-    runtime: docker
-    repo: https://github.com/gplans73/timecard-api
-    branch: main
+    env: docker
     dockerfilePath: ./Dockerfile
     envVars:
       - key: PORT
         value: 8080
-    healthCheckPath: /
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: 587
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        sync: false
