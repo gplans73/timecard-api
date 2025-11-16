@@ -33,7 +33,8 @@ WORKDIR /root/
 COPY --from=builder /app/main .
 
 # Copy the Excel template (if you have one)
-COPY template.xlsx . 2>/dev/null || true
+# Use wildcard to avoid failure if template doesn't exist
+COPY template.xlsx* ./
 
 # Expose port
 EXPOSE 8080
