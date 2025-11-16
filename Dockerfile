@@ -1,10 +1,10 @@
 # Build stage
 FROM golang:1.21-alpine AS builder
 
-WORKDIR /app
-
 # Install build dependencies
-RUN apk add --no-cache git
+RUN apk add --no-cache git gcc musl-dev
+
+WORKDIR /app
 
 # Copy go mod files
 COPY go.mod go.sum ./
@@ -14,26 +14,28 @@ RUN go mod download
 COPY . .
 
 # Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -o main .
+RUN go build -o main .
 
-# Final stage with LibreOffice for PDF conversion
+# Runtime stage
 FROM alpine:latest
 
 # Install LibreOffice and dependencies for PDF conversion
 RUN apk add --no-cache \
     libreoffice \
-    openjdk11-jre \
     ttf-dejavu \
-    fontconfig \
-    && fc-cache -f
+    ttf-liberation \
+    ca-certificates \
+    && rm -rf /var/cache/apk/*
 
-WORKDIR /app
+WORKDIR /root/
 
-# Copy binary and template from builder
+# Copy the binary from builder
 COPY --from=builder /app/main .
-COPY template.xlsx .
 
-# Expose port (Render will set PORT env var)
+# Copy the Excel template (if you have one)
+COPY template.xlsx . 2>/dev/null || true
+
+# Expose port
 EXPOSE 8080
 
 # Run the application
