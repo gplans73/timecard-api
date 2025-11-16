@@ -1,17 +1,15 @@
 FROM golang:1.21-bullseye
 
-# Install LibreOffice and dependencies
+# Install LibreOffice Calc (for spreadsheet conversion) and core dependencies
 RUN apt-get update && apt-get install -y \
-    libreoffice \
     libreoffice-calc \
-    libreoffice-writer \
     libreoffice-core \
     fonts-liberation \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Copy Go module files
+# Copy Go module files and download dependencies
 COPY go.mod go.sum ./
 RUN go mod download
 
