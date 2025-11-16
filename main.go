@@ -108,7 +108,7 @@ type EmailTimecardRequest struct {
 }
 
 type HealthResponse struct {
-    Status              string `json:"status"`
+    Status               string `json:"status"`
     LibreOfficeAvailable bool   `json:"libreoffice_available"`
 }
 
@@ -124,16 +124,16 @@ func main() {
 
     http.HandleFunc("/health", healthHandler)
     http.HandleFunc("/api/generate-timecard", corsMiddleware(generateTimecardHandler))
-    http.HandleFunc("/api/generate-timecard-pdf", corsMiddleware(generatePDFHandler))  // ← UPDATED: Match Swift app endpoint
-    http.HandleFunc("/api/generate-pdf", corsMiddleware(generatePDFHandler))           // ← Keep old endpoint for compatibility
+    http.HandleFunc("/api/generate-timecard-pdf", corsMiddleware(generatePDFHandler))  // ← PDF ENDPOINT
+    http.HandleFunc("/api/generate-pdf", corsMiddleware(generatePDFHandler))           // ← Legacy compatibility
     http.HandleFunc("/api/email-timecard", corsMiddleware(emailTimecardHandler))
 
-    log.Printf("Server starting on :%s ...", port)
-    log.Printf("Endpoints:")
+    log.Printf("🚀 Server starting on :%s", port)
+    log.Printf("📋 Available endpoints:")
+    log.Printf("  GET  /health - Health check")
     log.Printf("  POST /api/generate-timecard - Generate Excel")
     log.Printf("  POST /api/generate-timecard-pdf - Generate PDF")
     log.Printf("  POST /api/email-timecard - Email timecard")
-    log.Printf("  GET /health - Health check")
     
     if err := http.ListenAndServe(":"+port, nil); err != nil {
         log.Fatal(err)
@@ -148,7 +148,7 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
     }
 
     response := HealthResponse{
-        Status:              "ok",
+        Status:               "ok",
         LibreOfficeAvailable: libreOfficeAvailable,
     }
 
@@ -156,7 +156,7 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
     w.WriteHeader(http.StatusOK)
     json.NewEncoder(w).Encode(response)
     
-    log.Printf("Health check: status=ok, libreoffice=%v", libreOfficeAvailable)
+    log.Printf("✅ Health check: status=ok, libreoffice=%v", libreOfficeAvailable)
 }
 
 func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
@@ -184,16 +184,16 @@ func generateTimecardHandler(w http.ResponseWriter, r *http.Request) {
 
     var req TimecardRequest
     if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-        log.Printf("decode error: %v", err)
+        log.Printf("❌ Decode error: %v", err)
         http.Error(w, fmt.Sprintf("invalid request: %v", err), http.StatusBadRequest)
         return
     }
 
-    log.Printf("Generating timecard for %s", req.EmployeeName)
+    log.Printf("📊 Generating Excel timecard for %s", req.EmployeeName)
 
     excelData, err := generateExcelFile(req)
     if err != nil {
-        log.Printf("excel error: %v", err)
+        log.Printf("❌ Excel error: %v", err)
         http.Error(w, fmt.Sprintf("error generating timecard: %v", err), http.StatusInternalServerError)
         return
     }
@@ -203,7 +203,7 @@ func generateTimecardHandler(w http.ResponseWriter, r *http.Request) {
     w.WriteHeader(http.StatusOK)
     _, _ = w.Write(excelData)
 
-    log.Printf("OK: timecard bytes=%d", len(excelData))
+    log.Printf("✅ Excel generated: %d bytes", len(excelData))
 }
 
 func generatePDFHandler(w http.ResponseWriter, r *http.Request) {
@@ -214,17 +214,17 @@ func generatePDFHandler(w http.ResponseWriter, r *http.Request) {
 
     var req TimecardRequest
     if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-        log.Printf("decode error: %v", err)
+        log.Printf("❌ Decode error: %v", err)
         http.Error(w, fmt.Sprintf("invalid request: %v", err), http.StatusBadRequest)
         return
     }
 
-    log.Printf("Generating PDF timecard for %s", req.EmployeeName)
+    log.Printf("📄 Generating PDF timecard for %s", req.EmployeeName)
 
     // First generate Excel
     excelData, err := generateExcelFile(req)
     if err != nil {
-        log.Printf("excel error: %v", err)
+        log.Printf("❌ Excel generation error: %v", err)
         http.Error(w, fmt.Sprintf("error generating Excel: %v", err), http.StatusInternalServerError)
         return
     }
@@ -232,7 +232,7 @@ func generatePDFHandler(w http.ResponseWriter, r *http.Request) {
     // Convert to PDF
     pdfData, err := generatePDFFromExcel(excelData, fmt.Sprintf("timecard_%s.xlsx", req.EmployeeName))
     if err != nil {
-        log.Printf("pdf conversion error: %v", err)
+        log.Printf("❌ PDF conversion error: %v", err)
         http.Error(w, fmt.Sprintf("error converting to PDF: %v", err), http.StatusInternalServerError)
         return
     }
@@ -242,7 +242,7 @@ func generatePDFHandler(w http.ResponseWriter, r *http.Request) {
     w.WriteHeader(http.StatusOK)
     _, _ = w.Write(pdfData)
 
-    log.Printf("OK: PDF bytes=%d", len(pdfData))
+    log.Printf("✅ PDF generated: %d bytes", len(pdfData))
 }
 
 func emailTimecardHandler(w http.ResponseWriter, r *http.Request) {
@@ -253,22 +253,22 @@ func emailTimecardHandler(w http.ResponseWriter, r *http.Request) {
 
     var req EmailTimecardRequest
     if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-        log.Printf("decode error: %v", err)
+        log.Printf("❌ Decode error: %v", err)
         http.Error(w, fmt.Sprintf("invalid request: %v", err), http.StatusBadRequest)
         return
     }
 
-    log.Printf("Emailing timecard for %s → %s", req.EmployeeName, req.To)
+    log.Printf("📧 Emailing timecard for %s → %s", req.EmployeeName, req.To)
 
     excelData, err := generateExcelFile(req.TimecardRequest)
     if err != nil {
-        log.Printf("excel error: %v", err)
+        log.Printf("❌ Excel error: %v", err)
         http.Error(w, fmt.Sprintf("error generating timecard: %v", err), http.StatusInternalServerError)
         return
     }
 
     if err := sendEmail(req.To, req.CC, req.Subject, req.Body, excelData, req.EmployeeName); err != nil {
-        log.Printf("send email error: %v", err)
+        log.Printf("❌ Send email error: %v", err)
         http.Error(w, fmt.Sprintf("error sending email: %v", err), http.StatusInternalServerError)
         return
     }
@@ -278,6 +278,8 @@ func emailTimecardHandler(w http.ResponseWriter, r *http.Request) {
         "status":  "success",
         "message": fmt.Sprintf("Email sent to %s", req.To),
     })
+    
+    log.Printf("✅ Email sent successfully to %s", req.To)
 }
 
 /* ===========================
@@ -289,7 +291,7 @@ func generateExcelFile(req TimecardRequest) ([]byte, error) {
 
     f, err := excelize.OpenFile(templatePath)
     if err != nil {
-        log.Printf("Template not found, using basic file: %v", err)
+        log.Printf("⚠️  Template not found, using basic file: %v", err)
         return generateBasicExcelFile(req)
     }
     defer func() { _ = f.Close() }()
@@ -301,18 +303,18 @@ func generateExcelFile(req TimecardRequest) ([]byte, error) {
 
     if len(req.Weeks) > 0 {
         if err := fillWeekSheet(f, sheets[0], req, req.Weeks[0], 1); err != nil {
-            log.Printf("Week 1 fill error: %v", err)
+            log.Printf("⚠️  Week 1 fill error: %v", err)
         }
     }
     if len(sheets) > 1 && len(req.Weeks) > 1 {
         if err := fillWeekSheet(f, sheets[1], req, req.Weeks[1], 2); err != nil {
-            log.Printf("Week 2 fill error: %v", err)
+            log.Printf("⚠️  Week 2 fill error: %v", err)
         }
     }
 
     // Clear cached values so Excel recalculates on open
     if err := f.UpdateLinkedValue(); err != nil {
-        log.Printf("UpdateLinkedValue warning: %v", err)
+        log.Printf("⚠️  UpdateLinkedValue warning: %v", err)
     }
 
     buf, err := f.WriteToBuffer()
@@ -326,7 +328,7 @@ func generateExcelFile(req TimecardRequest) ([]byte, error) {
 func generatePDFFromExcel(excelData []byte, filename string) ([]byte, error) {
     // Check if LibreOffice is available
     if _, err := exec.LookPath("soffice"); err != nil {
-        return nil, fmt.Errorf("LibreOffice not installed. Please install it: apt-get install libreoffice")
+        return nil, fmt.Errorf("LibreOffice not installed. Please install it: apk add libreoffice")
     }
 
     // Save Excel data to temp file
@@ -368,7 +370,7 @@ func generatePDFFromExcel(excelData []byte, filename string) ([]byte, error) {
         return nil, fmt.Errorf("libreoffice conversion failed: %w\nOutput: %s", err, string(output))
     }
 
-    log.Printf("LibreOffice output: %s", string(output))
+    log.Printf("📄 LibreOffice output: %s", string(output))
 
     // Find the generated PDF file
     files, err := os.ReadDir(tmpDir)
@@ -387,7 +389,7 @@ func generatePDFFromExcel(excelData []byte, filename string) ([]byte, error) {
         return nil, fmt.Errorf("read pdf: %w", err)
     }
 
-    log.Printf("✅ Generated LibreOffice PDF: %d bytes (perfect Excel conversion)", len(pdfData))
+    log.Printf("✅ Generated PDF: %d bytes (pixel-perfect Excel conversion)", len(pdfData))
     return pdfData, nil
 }
 
