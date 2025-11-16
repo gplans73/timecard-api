@@ -1,4 +1,3 @@
-
 package main
 
 import (
@@ -108,6 +107,11 @@ type EmailTimecardRequest struct {
     Body    string  `json:"body"`
 }
 
+type HealthResponse struct {
+    Status              string `json:"status"`
+    LibreOfficeAvailable bool   `json:"libreoffice_available"`
+}
+
 /* ===============
    Server bootstrap
    =============== */
@@ -120,18 +124,39 @@ func main() {
 
     http.HandleFunc("/health", healthHandler)
     http.HandleFunc("/api/generate-timecard", corsMiddleware(generateTimecardHandler))
-    http.HandleFunc("/api/generate-pdf", corsMiddleware(generatePDFHandler))
+    http.HandleFunc("/api/generate-timecard-pdf", corsMiddleware(generatePDFHandler))  // ← UPDATED: Match Swift app endpoint
+    http.HandleFunc("/api/generate-pdf", corsMiddleware(generatePDFHandler))           // ← Keep old endpoint for compatibility
     http.HandleFunc("/api/email-timecard", corsMiddleware(emailTimecardHandler))
 
     log.Printf("Server starting on :%s ...", port)
+    log.Printf("Endpoints:")
+    log.Printf("  POST /api/generate-timecard - Generate Excel")
+    log.Printf("  POST /api/generate-timecard-pdf - Generate PDF")
+    log.Printf("  POST /api/email-timecard - Email timecard")
+    log.Printf("  GET /health - Health check")
+    
     if err := http.ListenAndServe(":"+port, nil); err != nil {
         log.Fatal(err)
     }
 }
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {
+    // Check if LibreOffice is available
+    libreOfficeAvailable := false
+    if _, err := exec.LookPath("soffice"); err == nil {
+        libreOfficeAvailable = true
+    }
+
+    response := HealthResponse{
+        Status:              "ok",
+        LibreOfficeAvailable: libreOfficeAvailable,
+    }
+
+    w.Header().Set("Content-Type", "application/json")
     w.WriteHeader(http.StatusOK)
-    _, _ = w.Write([]byte("OK"))
+    json.NewEncoder(w).Encode(response)
+    
+    log.Printf("Health check: status=ok, libreoffice=%v", libreOfficeAvailable)
 }
 
 func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
@@ -299,6 +324,11 @@ func generateExcelFile(req TimecardRequest) ([]byte, error) {
 
 // Generate PDF from Excel using LibreOffice (pixel-perfect conversion)
 func generatePDFFromExcel(excelData []byte, filename string) ([]byte, error) {
+    // Check if LibreOffice is available
+    if _, err := exec.LookPath("soffice"); err != nil {
+        return nil, fmt.Errorf("LibreOffice not installed. Please install it: apt-get install libreoffice")
+    }
+
     // Save Excel data to temp file
     tmpExcel, err := os.CreateTemp("", "timecard-*.xlsx")
     if err != nil {
@@ -360,8 +390,6 @@ func generatePDFFromExcel(excelData []byte, filename string) ([]byte, error) {
     log.Printf("✅ Generated LibreOffice PDF: %d bytes (perfect Excel conversion)", len(pdfData))
     return pdfData, nil
 }
-
-// Remove the old isNumeric helper as it's no longer needed
 
 // Fill a single week sheet with headers and daily hours (no styling here)
 func fillWeekSheet(f *excelize.File, sheet string, req TimecardRequest, week WeekData, weekNum int) error {
@@ -630,4 +658,3 @@ func buildEmailMessage(from string, to []string, cc []string, subject string, bo
     buf.WriteString(fmt.Sprintf("--%s--\r\n", boundary))
     return buf.String()
 }
-
