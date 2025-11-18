@@ -1,25 +1,30 @@
-FROM golang:1.21-bullseye
+# Use an image that supports LibreOffice
+FROM golang:1.21-alpine
 
-# Install LibreOffice Calc (for spreadsheet conversion) and core dependencies
-RUN apt-get update && apt-get install -y \
-    libreoffice-calc \
-    libreoffice-core \
-    fonts-liberation \
-    && rm -rf /var/lib/apt/lists/*
+# Install LibreOffice and required dependencies
+RUN apk add --no-cache \
+    libreoffice \
+    openjdk11-jre \
+    ttf-dejavu \
+    fontconfig
 
+# Set working directory
 WORKDIR /app
 
-# Copy Go module files and download dependencies
+# Copy go mod files
 COPY go.mod go.sum ./
+
+# Download dependencies
 RUN go mod download
 
-# Copy source code and template
-COPY *.go ./
-COPY template.xlsx ./
+# Copy source code
+COPY . .
 
-# Build the Go app
-RUN go build -o main .
+# Build the application
+RUN go build -o server .
 
+# Expose port
 EXPOSE 8080
 
-CMD ["./main"]
+# Run the application
+CMD ["./server"]
