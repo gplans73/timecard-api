@@ -3,9 +3,12 @@ package main
 import (
 	"archive/zip"
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
+	"mime/multipart"
+	"net/smtp"
 	"net/http"
 	"os"
 	"os/exec"
@@ -18,15 +21,34 @@ import (
 )
 
 func main() {
+	// Test LibreOffice on startup
+	log.Println("🔍 Checking LibreOffice installation...")
+	cmd := exec.Command("libreoffice", "--version")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Printf("⚠️ LibreOffice check failed: %v, output: %s", err, string(output))
+		log.Println("⚠️ PDF generation will be disabled")
+	} else {
+		log.Printf("✅ LibreOffice available: %s", strings.TrimSpace(string(output)))
+	}
+
+	// Health check endpoint
+	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+	})
+
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"status":  "ok",
 			"message": "Timecard API is running",
+			"version": "2.1.0",
 			"endpoints": []string{
 				"/api/generate-timecard",
 				"/api/email-timecard",
 				"/test/libreoffice",
+				"/health",
 			},
 		})
 	})
@@ -40,9 +62,9 @@ func main() {
 		port = "8080"
 	}
 
-	log.Printf("Server starting on port %s", port)
+	log.Printf("🚀 Server starting on port %s", port)
 	if err := http.ListenAndServe(":"+port, nil); err != nil {
-		log.Fatalf("Server failed: %v", err)
+		log.Fatalf("❌ Server failed: %v", err)
 	}
 }
 
@@ -86,6 +108,8 @@ type WeekData struct {
 }
 
 func generateTimecardHandler(w http.ResponseWriter, r *http.Request) {
+	log.Printf("📥 Received request to %s", r.URL.Path)
+
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -93,6 +117,7 @@ func generateTimecardHandler(w http.ResponseWriter, r *http.Request) {
 
 	var req TimecardRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Printf("❌ Failed to decode request: %v", err)
 		respondError(w, err)
 		return
 	}
@@ -102,6 +127,7 @@ func generateTimecardHandler(w http.ResponseWriter, r *http.Request) {
 	// Create xlsx file
 	file, err := createXLSXFile(req)
 	if err != nil {
+		log.Printf("❌ Failed to create Excel: %v", err)
 		respondError(w, err)
 		return
 	}
@@ -109,6 +135,7 @@ func generateTimecardHandler(w http.ResponseWriter, r *http.Request) {
 	// Create temp directory
 	tempDir, err := os.MkdirTemp("", "timecard-*")
 	if err != nil {
+		log.Printf("❌ Failed to create temp dir: %v", err)
 		respondError(w, err)
 		return
 	}
@@ -119,6 +146,7 @@ func generateTimecardHandler(w http.ResponseWriter, r *http.Request) {
 	excelPath := filepath.Join(tempDir, excelFilename)
 
 	if err := file.SaveAs(excelPath); err != nil {
+		log.Printf("❌ Failed to save Excel: %v", err)
 		respondError(w, err)
 		return
 	}
@@ -147,12 +175,14 @@ func generateTimecardHandler(w http.ResponseWriter, r *http.Request) {
 		zipWriter := zip.NewWriter(zipBuffer)
 
 		if err := addFileToZip(zipWriter, excelPath, excelFilename); err != nil {
+			log.Printf("❌ Failed to add Excel to ZIP: %v", err)
 			respondError(w, err)
 			return
 		}
 
 		pdfFilename := filepath.Base(pdfPath)
 		if err := addFileToZip(zipWriter, pdfPath, pdfFilename); err != nil {
+			log.Printf("❌ Failed to add PDF to ZIP: %v", err)
 			respondError(w, err)
 			return
 		}
@@ -167,6 +197,7 @@ func generateTimecardHandler(w http.ResponseWriter, r *http.Request) {
 		// Return just Excel
 		excelData, err := os.ReadFile(excelPath)
 		if err != nil {
+			log.Printf("❌ Failed to read Excel: %v", err)
 			respondError(w, err)
 			return
 		}
@@ -179,6 +210,8 @@ func generateTimecardHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func emailTimecardHandler(w http.ResponseWriter, r *http.Request) {
+	log.Printf("📥 Received email request to %s", r.URL.Path)
+
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -186,33 +219,100 @@ func emailTimecardHandler(w http.ResponseWriter, r *http.Request) {
 
 	var req EmailTimecardRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Printf("❌ Failed to decode email request: %v", err)
 		respondError(w, err)
 		return
 	}
 
 	// Check SMTP configuration
 	smtpHost := os.Getenv("SMTP_HOST")
-	if smtpHost == "" {
-		respondError(w, fmt.Errorf("SMTP not configured on server"))
+	smtpPort := os.Getenv("SMTP_PORT")
+	smtpUser := os.Getenv("SMTP_USER")
+	smtpPass := os.Getenv("SMTP_PASS")
+	smtpFrom := os.Getenv("SMTP_FROM")
+
+	if smtpHost == "" || smtpPass == "" || smtpFrom == "" {
+		log.Printf("⚠️ SMTP not configured")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{
+			"status":  "error",
+			"message": "SMTP not configured on server",
+		})
 		return
 	}
 
-	log.Printf("📧 Email handler called (SMTP not fully implemented yet)")
+	if smtpPort == "" {
+		smtpPort = "587"
+	}
+
+	log.Printf("📧 Sending email from %s to %s", smtpFrom, req.To)
+
+	// Generate Excel file
+	file, err := createXLSXFile(req.TimecardRequest)
+	if err != nil {
+		respondError(w, err)
+		return
+	}
+
+	// Create temp directory
+	tempDir, err := os.MkdirTemp("", "timecard-*")
+	if err != nil {
+		respondError(w, err)
+		return
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Save Excel
+	excelFilename := fmt.Sprintf("Timecard_%s_%s.xlsx", req.EmployeeName, time.Now().Format("2006-01-02"))
+	excelPath := filepath.Join(tempDir, excelFilename)
+	if err := file.SaveAs(excelPath); err != nil {
+		respondError(w, err)
+		return
+	}
+
+	log.Printf("✅ Excel file created for email: %s", excelPath)
+
+	// Generate PDF if requested
+	var pdfPath string
+	if req.IncludePDF {
+		pdfFilename := fmt.Sprintf("Timecard_%s_%s.pdf", req.EmployeeName, time.Now().Format("2006-01-02"))
+		pdfPath = filepath.Join(tempDir, pdfFilename)
+
+		log.Printf("🔄 Converting Excel to PDF for email...")
+		if err := convertExcelToPDF(excelPath, pdfPath); err != nil {
+			log.Printf("⚠️ PDF generation failed: %v", err)
+			pdfPath = ""
+		} else {
+			log.Printf("✅ PDF file created for email: %s", pdfPath)
+		}
+	}
+
+	// Send email with attachments
+	if err := sendEmailWithAttachments(smtpHost, smtpPort, smtpUser, smtpPass, smtpFrom, req.To, req.CC, req.Subject, req.Body, excelPath, pdfPath); err != nil {
+		log.Printf("❌ Failed to send email: %v", err)
+		respondError(w, err)
+		return
+	}
+
+	log.Printf("✅ Email sent successfully to %s", req.To)
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{
-		"status":  "error",
-		"message": "SMTP not configured on server",
+		"status":  "success",
+		"message": "Email sent successfully",
 	})
 }
 
 func testLibreOfficeHandler(w http.ResponseWriter, r *http.Request) {
+	log.Printf("🔍 Testing LibreOffice installation")
 	cmd := exec.Command("libreoffice", "--version")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
+		log.Printf("❌ LibreOffice test failed: %v", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte(fmt.Sprintf("❌ Error: %v\nOutput: %s", err, string(output))))
 		return
 	}
+	log.Printf("✅ LibreOffice test passed")
 	w.Write([]byte(fmt.Sprintf("✅ LibreOffice installed:\n%s", string(output))))
 }
 
@@ -225,10 +325,13 @@ func convertExcelToPDF(excelPath, pdfPath string) error {
 		"--outdir", outputDir,
 		excelPath)
 
+	log.Printf("🔧 Running: %s", cmd.String())
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("LibreOffice conversion failed: %v, output: %s", err, string(output))
 	}
+
+	log.Printf("✅ LibreOffice output: %s", string(output))
 
 	baseName := strings.TrimSuffix(filepath.Base(excelPath), filepath.Ext(excelPath))
 	generatedPDF := filepath.Join(outputDir, baseName+".pdf")
@@ -268,40 +371,123 @@ func respondError(w http.ResponseWriter, err error) {
 	json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 }
 
+func sendEmailWithAttachments(host, port, user, pass, from, to, cc, subject, body, excelPath, pdfPath string) error {
+	// Read Excel attachment
+	excelData, err := os.ReadFile(excelPath)
+	if err != nil {
+		return fmt.Errorf("failed to read Excel file: %v", err)
+	}
+
+	// Read PDF attachment if exists
+	var pdfData []byte
+	if pdfPath != "" && fileExists(pdfPath) {
+		pdfData, err = os.ReadFile(pdfPath)
+		if err != nil {
+			log.Printf("⚠️ Failed to read PDF file: %v", err)
+		}
+	}
+
+	// Build multipart email
+	var emailBuffer bytes.Buffer
+	writer := multipart.NewWriter(&emailBuffer)
+
+	// Email headers
+	boundary := writer.Boundary()
+	headers := []string{
+		"From: " + from,
+		"To: " + to,
+		"Subject: " + subject,
+		"MIME-Version: 1.0",
+		"Content-Type: multipart/mixed; boundary=" + boundary,
+	}
+
+	if cc != "" {
+		headers = append(headers, "Cc: "+cc)
+	}
+
+	message := strings.Join(headers, "\r\n") + "\r\n\r\n"
+
+	// Add email body
+	part, _ := writer.CreatePart(map[string][]string{
+		"Content-Type": {"text/plain; charset=utf-8"},
+	})
+	part.Write([]byte(body))
+
+	// Add Excel attachment
+	excelFilename := filepath.Base(excelPath)
+	excelPart, _ := writer.CreatePart(map[string][]string{
+		"Content-Type":              {"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},
+		"Content-Disposition":       {"attachment; filename=\"" + excelFilename + "\""},
+		"Content-Transfer-Encoding": {"base64"},
+	})
+
+	encoder := base64.NewEncoder(base64.StdEncoding, excelPart)
+	encoder.Write(excelData)
+	encoder.Close()
+
+	// Add PDF attachment if exists
+	if len(pdfData) > 0 {
+		pdfFilename := filepath.Base(pdfPath)
+		pdfPart, _ := writer.CreatePart(map[string][]string{
+			"Content-Type":              {"application/pdf"},
+			"Content-Disposition":       {"attachment; filename=\"" + pdfFilename + "\""},
+			"Content-Transfer-Encoding": {"base64"},
+		})
+
+		encoder := base64.NewEncoder(base64.StdEncoding, pdfPart)
+		encoder.Write(pdfData)
+		encoder.Close()
+	}
+
+	writer.Close()
+
+	// Combine headers and body
+	message += emailBuffer.String()
+
+	// Send via SMTP
+	auth := smtp.PlainAuth("", user, pass, host)
+	addr := host + ":" + port
+
+	recipients := []string{to}
+	if cc != "" {
+		ccAddresses := strings.Split(cc, ",")
+		for _, addr := range ccAddresses {
+			recipients = append(recipients, strings.TrimSpace(addr))
+		}
+	}
+
+	log.Printf("📧 Sending to SMTP server %s:%s", host, port)
+	return smtp.SendMail(addr, auth, from, recipients, []byte(message))
+}
+
 func createXLSXFile(req TimecardRequest) (*excelize.File, error) {
 	file := excelize.NewFile()
 
-	// Create sheet with proper error handling
 	sheetName := "Timecard"
 	_, err := file.NewSheet(sheetName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create sheet: %v", err)
 	}
 
-	// Delete default sheet
 	file.DeleteSheet("Sheet1")
 
-	// Set column widths
 	file.SetColWidth(sheetName, "A", "A", 12)
 	file.SetColWidth(sheetName, "B", "B", 20)
 	file.SetColWidth(sheetName, "C", "C", 10)
 	file.SetColWidth(sheetName, "D", "D", 10)
 
-	// Header style
 	headerStyle, _ := file.NewStyle(&excelize.Style{
-		Font: &excelize.Font{Bold: true, Size: 12},
-		Fill: excelize.Fill{Type: "pattern", Color: []string{"#4472C4"}, Pattern: 1},
+		Font:      &excelize.Font{Bold: true, Size: 12},
+		Fill:      excelize.Fill{Type: "pattern", Color: []string{"#4472C4"}, Pattern: 1},
 		Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center"},
 	})
 
-	// Title
 	row := 1
 	file.SetCellValue(sheetName, "A"+strconv.Itoa(row), "TIMECARD")
 	file.MergeCell(sheetName, "A"+strconv.Itoa(row), "D"+strconv.Itoa(row))
 	file.SetCellStyle(sheetName, "A"+strconv.Itoa(row), "D"+strconv.Itoa(row), headerStyle)
 	row++
 
-	// Employee info
 	file.SetCellValue(sheetName, "A"+strconv.Itoa(row), "Employee:")
 	file.SetCellValue(sheetName, "B"+strconv.Itoa(row), req.EmployeeName)
 	row++
@@ -314,7 +500,6 @@ func createXLSXFile(req TimecardRequest) (*excelize.File, error) {
 	file.SetCellValue(sheetName, "B"+strconv.Itoa(row), req.Year)
 	row += 2
 
-	// Column headers
 	file.SetCellValue(sheetName, "A"+strconv.Itoa(row), "Date")
 	file.SetCellValue(sheetName, "B"+strconv.Itoa(row), "Job Code")
 	file.SetCellValue(sheetName, "C"+strconv.Itoa(row), "Hours")
@@ -322,7 +507,6 @@ func createXLSXFile(req TimecardRequest) (*excelize.File, error) {
 	file.SetCellStyle(sheetName, "A"+strconv.Itoa(row), "D"+strconv.Itoa(row), headerStyle)
 	row++
 
-	// Add entries
 	for _, entry := range req.Entries {
 		file.SetCellValue(sheetName, "A"+strconv.Itoa(row), entry.Date)
 		file.SetCellValue(sheetName, "B"+strconv.Itoa(row), entry.JobCode)
@@ -335,7 +519,6 @@ func createXLSXFile(req TimecardRequest) (*excelize.File, error) {
 		row++
 	}
 
-	// Total hours
 	row++
 	totalHours := 0.0
 	for _, entry := range req.Entries {
