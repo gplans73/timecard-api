@@ -17,20 +17,6 @@ import (
 	"github.com/xuri/excelize/v2"
 )
 
-// Environment variables for SMTP configuration (SendGrid, AWS SES, Mailgun, etc.)
-const SMTP_HOST = "smtp.sendgrid.net"              // This should be literally "smtp" for SendGrid
-const SMTP_PORT = "587"                            // Port is 587 for STARTTLS (recommended) or 465 for SSL/TLS
-const SMTP_USER = "apikey"                         // For SendGrid, username should be "apikey"
-const SMTP_PASS_ENV = "SMTP_PASS"                  // This is the environment variable name (e.g., your SendGrid API key)
-const SMTP_FROM_ENV = "SMTP_FROM"                  // Sender email (must be verified in SendGrid/AWS SES)
-
-// Environment variable should be set in your development environment properly.
-// export SMTP_HOST="smtp.sendgrid.net"
-// export SMTP_PORT="587"
-// export SMTP_USER="apikey"
-// export SMTP_PASS="your_actual_sendgrid_api_key"
-// export SMTP_FROM="noreply@yourdomain.com"
-
 func main() {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -39,6 +25,7 @@ func main() {
 			"message": "Timecard API is running",
 			"endpoints": []string{
 				"/api/generate-timecard",
+				"/api/email-timecard",
 				"/test/libreoffice",
 			},
 		})
@@ -68,7 +55,15 @@ type TimecardRequest struct {
 	Jobs            []Job      `json:"jobs"`
 	Entries         []Entry    `json:"entries"`
 	Weeks           []WeekData `json:"weeks"`
-	IncludePDF      bool       `json:"include_pdf"` // NEW: PDF generation flag
+	IncludePDF      bool       `json:"include_pdf"`
+}
+
+type EmailTimecardRequest struct {
+	TimecardRequest
+	To      string `json:"to"`
+	CC      string `json:"cc"`
+	Subject string `json:"subject"`
+	Body    string `json:"body"`
 }
 
 type Job struct {
@@ -102,10 +97,9 @@ func generateTimecardHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("📥 Request: %+v", req)
-	log.Printf("🔧 IncludePDF: %v", req.IncludePDF)
+	log.Printf("📥 Generating timecard for %s (IncludePDF: %v)", req.EmployeeName, req.IncludePDF)
 
-	// Create xlsx file using excelize
+	// Create xlsx file
 	file, err := createXLSXFile(req)
 	if err != nil {
 		respondError(w, err)
@@ -140,25 +134,23 @@ func generateTimecardHandler(w http.ResponseWriter, r *http.Request) {
 		log.Printf("🔄 Converting Excel to PDF...")
 		if err := convertExcelToPDF(excelPath, pdfPath); err != nil {
 			log.Printf("⚠️ PDF conversion failed: %v", err)
-			pdfPath = "" // Continue without PDF
+			pdfPath = ""
 		} else {
 			log.Printf("✅ PDF file created: %s", pdfPath)
 		}
 	}
 
-	// If PDF was generated, return ZIP archive with both files
+	// If PDF was generated, return ZIP with both files
 	if pdfPath != "" && fileExists(pdfPath) {
 		log.Printf("📦 Creating ZIP archive with Excel and PDF")
 		zipBuffer := new(bytes.Buffer)
 		zipWriter := zip.NewWriter(zipBuffer)
 
-		// Add Excel to ZIP
 		if err := addFileToZip(zipWriter, excelPath, excelFilename); err != nil {
 			respondError(w, err)
 			return
 		}
 
-		// Add PDF to ZIP
 		pdfFilename := filepath.Base(pdfPath)
 		if err := addFileToZip(zipWriter, pdfPath, pdfFilename); err != nil {
 			respondError(w, err)
@@ -167,13 +159,12 @@ func generateTimecardHandler(w http.ResponseWriter, r *http.Request) {
 
 		zipWriter.Close()
 
-		// Send ZIP file
 		w.Header().Set("Content-Type", "application/zip")
 		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"timecard_%s.zip\"", time.Now().Format("2006-01-02")))
 		w.Write(zipBuffer.Bytes())
 		log.Printf("✅ Sent ZIP file: %d bytes", zipBuffer.Len())
 	} else {
-		// Return just Excel file
+		// Return just Excel
 		excelData, err := os.ReadFile(excelPath)
 		if err != nil {
 			respondError(w, err)
@@ -187,11 +178,47 @@ func generateTimecardHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// Convert Excel to PDF using LibreOffice
+func emailTimecardHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req EmailTimecardRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, err)
+		return
+	}
+
+	// Check SMTP configuration
+	smtpHost := os.Getenv("SMTP_HOST")
+	if smtpHost == "" {
+		respondError(w, fmt.Errorf("SMTP not configured on server"))
+		return
+	}
+
+	log.Printf("📧 Email handler called (SMTP not fully implemented yet)")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{
+		"status":  "error",
+		"message": "SMTP not configured on server",
+	})
+}
+
+func testLibreOfficeHandler(w http.ResponseWriter, r *http.Request) {
+	cmd := exec.Command("libreoffice", "--version")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(fmt.Sprintf("❌ Error: %v\nOutput: %s", err, string(output))))
+		return
+	}
+	w.Write([]byte(fmt.Sprintf("✅ LibreOffice installed:\n%s", string(output))))
+}
+
 func convertExcelToPDF(excelPath, pdfPath string) error {
 	outputDir := filepath.Dir(pdfPath)
 
-	// Run LibreOffice headless conversion
 	cmd := exec.Command("libreoffice",
 		"--headless",
 		"--convert-to", "pdf",
@@ -203,11 +230,9 @@ func convertExcelToPDF(excelPath, pdfPath string) error {
 		return fmt.Errorf("LibreOffice conversion failed: %v, output: %s", err, string(output))
 	}
 
-	// LibreOffice creates PDF with same base name
 	baseName := strings.TrimSuffix(filepath.Base(excelPath), filepath.Ext(excelPath))
 	generatedPDF := filepath.Join(outputDir, baseName+".pdf")
 
-	// Rename to desired output path if different
 	if generatedPDF != pdfPath {
 		if err := os.Rename(generatedPDF, pdfPath); err != nil {
 			return fmt.Errorf("failed to rename PDF: %v", err)
@@ -217,7 +242,6 @@ func convertExcelToPDF(excelPath, pdfPath string) error {
 	return nil
 }
 
-// Add file to ZIP archive
 func addFileToZip(zipWriter *zip.Writer, filePath, fileName string) error {
 	fileData, err := os.ReadFile(filePath)
 	if err != nil {
@@ -233,27 +257,9 @@ func addFileToZip(zipWriter *zip.Writer, filePath, fileName string) error {
 	return err
 }
 
-// Check if file exists
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
-}
-
-// Test LibreOffice installation
-func testLibreOfficeHandler(w http.ResponseWriter, r *http.Request) {
-	cmd := exec.Command("libreoffice", "--version")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte(fmt.Sprintf("❌ Error: %v\nOutput: %s", err, string(output))))
-		return
-	}
-	w.Write([]byte(fmt.Sprintf("✅ LibreOffice installed:\n%s", string(output))))
-}
-
-func emailTimecardHandler(w http.ResponseWriter, r *http.Request) {
-	// ... (keep your existing email handler code, but add PDF support similarly)
-	w.Write([]byte("Email handler - add PDF support here if needed"))
 }
 
 func respondError(w http.ResponseWriter, err error) {
@@ -262,14 +268,82 @@ func respondError(w http.ResponseWriter, err error) {
 	json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 }
 
-// createXLSXFile generates the Excel file (keep your existing implementation)
 func createXLSXFile(req TimecardRequest) (*excelize.File, error) {
-	// Your existing Excel generation logic here
-	// This is just a placeholder - use your actual implementation
 	file := excelize.NewFile()
-	
-	// Add your timecard generation logic here
-	// ... (keep your existing code)
-	
+
+	// Create sheet with proper error handling
+	sheetName := "Timecard"
+	_, err := file.NewSheet(sheetName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create sheet: %v", err)
+	}
+
+	// Delete default sheet
+	file.DeleteSheet("Sheet1")
+
+	// Set column widths
+	file.SetColWidth(sheetName, "A", "A", 12)
+	file.SetColWidth(sheetName, "B", "B", 20)
+	file.SetColWidth(sheetName, "C", "C", 10)
+	file.SetColWidth(sheetName, "D", "D", 10)
+
+	// Header style
+	headerStyle, _ := file.NewStyle(&excelize.Style{
+		Font: &excelize.Font{Bold: true, Size: 12},
+		Fill: excelize.Fill{Type: "pattern", Color: []string{"#4472C4"}, Pattern: 1},
+		Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center"},
+	})
+
+	// Title
+	row := 1
+	file.SetCellValue(sheetName, "A"+strconv.Itoa(row), "TIMECARD")
+	file.MergeCell(sheetName, "A"+strconv.Itoa(row), "D"+strconv.Itoa(row))
+	file.SetCellStyle(sheetName, "A"+strconv.Itoa(row), "D"+strconv.Itoa(row), headerStyle)
+	row++
+
+	// Employee info
+	file.SetCellValue(sheetName, "A"+strconv.Itoa(row), "Employee:")
+	file.SetCellValue(sheetName, "B"+strconv.Itoa(row), req.EmployeeName)
+	row++
+
+	file.SetCellValue(sheetName, "A"+strconv.Itoa(row), "Pay Period:")
+	file.SetCellValue(sheetName, "B"+strconv.Itoa(row), req.PayPeriodNum)
+	row++
+
+	file.SetCellValue(sheetName, "A"+strconv.Itoa(row), "Year:")
+	file.SetCellValue(sheetName, "B"+strconv.Itoa(row), req.Year)
+	row += 2
+
+	// Column headers
+	file.SetCellValue(sheetName, "A"+strconv.Itoa(row), "Date")
+	file.SetCellValue(sheetName, "B"+strconv.Itoa(row), "Job Code")
+	file.SetCellValue(sheetName, "C"+strconv.Itoa(row), "Hours")
+	file.SetCellValue(sheetName, "D"+strconv.Itoa(row), "Overtime")
+	file.SetCellStyle(sheetName, "A"+strconv.Itoa(row), "D"+strconv.Itoa(row), headerStyle)
+	row++
+
+	// Add entries
+	for _, entry := range req.Entries {
+		file.SetCellValue(sheetName, "A"+strconv.Itoa(row), entry.Date)
+		file.SetCellValue(sheetName, "B"+strconv.Itoa(row), entry.JobCode)
+		file.SetCellValue(sheetName, "C"+strconv.Itoa(row), entry.Hours)
+		overtimeText := "No"
+		if entry.Overtime {
+			overtimeText = "Yes"
+		}
+		file.SetCellValue(sheetName, "D"+strconv.Itoa(row), overtimeText)
+		row++
+	}
+
+	// Total hours
+	row++
+	totalHours := 0.0
+	for _, entry := range req.Entries {
+		totalHours += entry.Hours
+	}
+	file.SetCellValue(sheetName, "B"+strconv.Itoa(row), "Total Hours:")
+	file.SetCellValue(sheetName, "C"+strconv.Itoa(row), totalHours)
+	file.SetCellStyle(sheetName, "B"+strconv.Itoa(row), "C"+strconv.Itoa(row), headerStyle)
+
 	return file, nil
 }
