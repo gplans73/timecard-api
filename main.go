@@ -48,7 +48,7 @@ func main() {
         json.NewEncoder(w).Encode(map[string]interface{}{
             "status":  "ok",
             "message": "Timecard API is running",
-            "version": "2.3.0",
+            "version": "2.4.0",
             "endpoints": []string{
                 "/api/generate-timecard",
                 "/api/email-timecard",
@@ -501,53 +501,52 @@ func createXLSXFile(req TimecardRequest) (*excelize.File, error) {
 
     log.Printf("✅ Template loaded successfully")
     
-    // DEBUG: Log template structure
-    sheetName := file.GetSheetName(0)
-    log.Printf("🔍 Template sheet name: %s", sheetName)
+    // Get the first sheet name from template
+    originalSheetName := file.GetSheetName(0)
+    log.Printf("🔍 Original template sheet name: %s", originalSheetName)
     
-    // Log some sample cells to understand the template structure
-    sampleCells := []string{"A1", "B1", "C1", "D1", "E1", "A2", "B2", "C2", "D2", "E2", "A3", "B3", "C3", "D3", "E3"}
-    for _, cell := range sampleCells {
-        value, _ := file.GetCellValue(sheetName, cell)
-        if value != "" {
-            log.Printf("🔍 Cell %s = '%s'", cell, value)
-        }
-    }
-
     // Check if multi-week data is provided
     if req.Weeks != nil && len(req.Weeks) > 0 {
         log.Printf("📊 Processing multi-week timecard (%d weeks)", len(req.Weeks))
 
-        // Get the original template sheet name (index 0)
-        originalSheetName := file.GetSheetName(0)
+        // CRITICAL: If template sheet is named "Week 2" or references other weeks,
+        // we need to use it differently
+        
+        // Strategy: Delete all sheets except the first one, then use that as the base template
+        sheetList := file.GetSheetList()
+        for i := 1; i < len(sheetList); i++ {
+            if err := file.DeleteSheet(sheetList[i]); err != nil {
+                log.Printf("⚠️ Could not delete sheet %s: %v", sheetList[i], err)
+            }
+        }
         
         // Process each week
         for i, weekData := range req.Weeks {
             var targetSheetName string
             
             if i == 0 {
-                // First week: rename the existing template sheet
+                // First week: rename the original sheet
                 targetSheetName = weekData.WeekLabel
                 if err := file.SetSheetName(originalSheetName, targetSheetName); err != nil {
                     return nil, fmt.Errorf("failed to rename first sheet to %s: %v", targetSheetName, err)
                 }
+                originalSheetName = targetSheetName
                 log.Printf("📝 Renamed original sheet to: %s", targetSheetName)
             } else {
-                // Subsequent weeks: create new sheet and copy from first week (index 0)
+                // Subsequent weeks: copy the first week sheet
                 targetSheetName = weekData.WeekLabel
                 newSheetIndex, err := file.NewSheet(targetSheetName)
                 if err != nil {
-                    return nil, fmt.Errorf("failed to create new sheet for week %d: %v", i+1, err)
+                    return nil, fmt.Errorf("failed to create sheet for week %d: %v", i+1, err)
                 }
                 
-                // Copy content from the first week sheet (which is at index 0)
                 if err := file.CopySheet(0, newSheetIndex); err != nil {
-                    return nil, fmt.Errorf("failed to copy template sheet for week %d: %v", i+1, err)
+                    return nil, fmt.Errorf("failed to copy sheet for week %d: %v", i+1, err)
                 }
-                log.Printf("📝 Created and copied sheet: %s (index %d)", targetSheetName, newSheetIndex)
+                log.Printf("📝 Created and copied sheet: %s", targetSheetName)
             }
             
-            // Populate this week's data
+            // Populate this week's data - ONLY WRITE TO NON-FORMULA CELLS
             if err := populateTimecardSheet(file, targetSheetName, req, weekData.Entries, weekData.WeekLabel, weekData.WeekNumber); err != nil {
                 return nil, fmt.Errorf("failed to populate sheet %s: %v", targetSheetName, err)
             }
@@ -558,10 +557,17 @@ func createXLSXFile(req TimecardRequest) (*excelize.File, error) {
     } else {
         // Single week: use the template's existing sheet
         log.Printf("📊 Processing single-week timecard")
-        templateSheetName := file.GetSheetName(0)
+
+        // Delete all sheets except the first one
+        sheetList := file.GetSheetList()
+        for i := 1; i < len(sheetList); i++ {
+            if err := file.DeleteSheet(sheetList[i]); err != nil {
+                log.Printf("⚠️ Could not delete sheet %s: %v", sheetList[i], err)
+            }
+        }
 
         if req.WeekNumberLabel != "" {
-            file.SetSheetName(templateSheetName, req.WeekNumberLabel)
+            file.SetSheetName(originalSheetName, req.WeekNumberLabel)
         }
 
         if err := populateTimecardSheet(file, file.GetSheetName(0), req, req.Entries, req.WeekNumberLabel, 1); err != nil {
@@ -574,52 +580,80 @@ func createXLSXFile(req TimecardRequest) (*excelize.File, error) {
 }
 
 // populateTimecardSheet fills in a single sheet with timecard data
+// CRITICAL: This function should NOT overwrite cells that contain formulas
 func populateTimecardSheet(file *excelize.File, sheetName string, req TimecardRequest, entries []Entry, weekLabel string, weekNumber int) error {
     log.Printf("✍️ Populating sheet: %s with %d entries", sheetName, len(entries))
 
-    // Set employee name (cell M2)
-    file.SetCellValue(sheetName, "M2", req.EmployeeName)
+    // CRITICAL CHANGE: Check if cells contain formulas before overwriting
+    // Only write to cells that don't have formulas or that are meant to be data entry fields
+    
+    // For cells that should be populated (non-formula cells in Week 1 template):
+    // These are the actual data entry cells, not formula cells
+    
+    // Check if M2 has a formula
+    m2Value, err := file.GetCellValue(sheetName, "M2")
+    if err == nil && !strings.HasPrefix(m2Value, "=") {
+        // Only write if it's not a formula
+        file.SetCellValue(sheetName, "M2", req.EmployeeName)
+        log.Printf("✏️ Set M2 (Employee Name) = %s", req.EmployeeName)
+    } else {
+        log.Printf("⚠️ Skipping M2 (contains formula or error): %s", m2Value)
+    }
 
-    // Set pay period and year (cells AJ2 and AJ3)
-    file.SetCellValue(sheetName, "AJ2", req.PayPeriodNum)
-    file.SetCellValue(sheetName, "AJ3", req.Year)
+    // Check AJ2 (PP#)
+    aj2Value, err := file.GetCellValue(sheetName, "AJ2")
+    if err == nil && !strings.HasPrefix(aj2Value, "=") {
+        file.SetCellValue(sheetName, "AJ2", req.PayPeriodNum)
+        log.Printf("✏️ Set AJ2 (PP#) = %d", req.PayPeriodNum)
+    } else {
+        log.Printf("⚠️ Skipping AJ2 (contains formula): %s", aj2Value)
+    }
 
-    // Set week label (cell AJ4)
+    // Check AJ3 (Year)
+    aj3Value, err := file.GetCellValue(sheetName, "AJ3")
+    if err == nil && !strings.HasPrefix(aj3Value, "=") {
+        file.SetCellValue(sheetName, "AJ3", req.Year)
+        log.Printf("✏️ Set AJ3 (Year) = %d", req.Year)
+    } else {
+        log.Printf("⚠️ Skipping AJ3 (contains formula): %s", aj3Value)
+    }
+
+    // AJ4 should always be writable (week label)
     file.SetCellValue(sheetName, "AJ4", weekLabel)
+    log.Printf("✏️ Set AJ4 (Week Label) = %s", weekLabel)
 
-    // Parse week start date and set it (cell B4)
+    // Parse week start date
     weekStart, err := time.Parse(time.RFC3339, req.WeekStartDate)
     if err != nil {
         log.Printf("⚠️ Failed to parse week start date: %v", err)
         weekStart = time.Now()
     }
-    // Excel date serial format (days since 1900-01-01, with adjustment for Excel's leap year bug)
     excelEpoch := time.Date(1899, 12, 30, 0, 0, 0, 0, time.UTC)
     daysSinceEpoch := weekStart.Sub(excelEpoch).Hours() / 24
-    file.SetCellValue(sheetName, "B4", daysSinceEpoch)
+
+    // Check B4 before writing (date start)
+    b4Value, err := file.GetCellValue(sheetName, "B4")
+    if err == nil && !strings.HasPrefix(b4Value, "=") {
+        file.SetCellValue(sheetName, "B4", daysSinceEpoch)
+        log.Printf("✏️ Set B4 (Week Start) = %.2f", daysSinceEpoch)
+    } else {
+        log.Printf("⚠️ Skipping B4 (contains formula): %s", b4Value)
+    }
 
     // Job columns - up to 16 jobs can be displayed
-    // Code columns: C, E, G, I, K, M, O, Q, S, U, W, Y, AA, AC, AE, AG
-    // Job name columns: D, F, H, J, L, N, P, R, T, V, X, Z, AB, AD, AF, AH
-    // Hours columns (same as job name columns): D, F, H, J, L, N, P, R, T, V, X, Z, AB, AD, AF, AH
     jobCodeColumns := []string{"C", "E", "G", "I", "K", "M", "O", "Q", "S", "U", "W", "Y", "AA", "AC", "AE", "AG"}
     jobNameColumns := []string{"D", "F", "H", "J", "L", "N", "P", "R", "T", "V", "X", "Z", "AB", "AD", "AF", "AH"}
     
-    // Set job headers (Row 4)
-    jobColumnMap := make(map[string]string) // Maps job code to its data column
+    // Set job headers (Row 4) - these are typically safe to overwrite
+    jobColumnMap := make(map[string]string)
     for i, job := range req.Jobs {
         if i >= len(jobCodeColumns) {
             log.Printf("⚠️ Too many jobs (%d), template only supports %d jobs", len(req.Jobs), len(jobCodeColumns))
             break
         }
         
-        // Set job code in code column (row 4)
         file.SetCellValue(sheetName, jobCodeColumns[i]+"4", job.JobCode)
-        
-        // Set job name in job column (row 4)
         file.SetCellValue(sheetName, jobNameColumns[i]+"4", job.JobName)
-        
-        // Map job code to its data column for later use
         jobColumnMap[job.JobCode] = jobNameColumns[i]
         
         log.Printf("📋 Set job %d: Code=%s in %s4, Name=%s in %s4", i+1, job.JobCode, jobCodeColumns[i], job.JobName, jobNameColumns[i])
@@ -636,57 +670,57 @@ func populateTimecardSheet(file *excelize.File, sheetName string, req TimecardRe
         entryMap[key] = entry
     }
 
-    // Fill in hours for each entry
+    // Fill in hours for each entry - these cells should be data entry cells
     for _, entry := range entryMap {
-        // Parse the entry date
         entryDate, err := time.Parse(time.RFC3339, entry.Date)
         if err != nil {
             log.Printf("⚠️ Failed to parse entry date %s: %v", entry.Date, err)
             continue
         }
 
-        // Find the column for this job
         jobCol, exists := jobColumnMap[entry.JobCode]
         if !exists {
             log.Printf("⚠️ Job code %s not found in job column map", entry.JobCode)
             continue
         }
 
-        // Calculate day of week offset from week start (0=Sunday, 6=Saturday)
         dayOffset := int(entryDate.Sub(weekStart).Hours() / 24)
         if dayOffset < 0 || dayOffset > 6 {
             log.Printf("⚠️ Entry date %s is outside week range (offset=%d)", entry.Date, dayOffset)
             continue
         }
 
-        // Determine row based on whether it's overtime and day of week
         var row int
         if entry.Overtime {
-            // Overtime section: rows 16-22 (Sun-Sat)
             row = 16 + dayOffset
         } else {
-            // Regular time section: rows 5-11 (Sun-Sat)
             row = 5 + dayOffset
         }
 
-        // Set the hours in the appropriate cell
         cellRef := jobCol + strconv.Itoa(row)
         file.SetCellValue(sheetName, cellRef, entry.Hours)
         log.Printf("✏️ Set %s = %.2f hours (Job: %s, Date: %s, OT: %v)",
             cellRef, entry.Hours, entry.JobCode, entryDate.Format("Mon Jan 2"), entry.Overtime)
     }
 
-    // Set date cells for each day (B5-B11 for regular, B16-B22 for overtime)
-    // These should already be in the template, but we can ensure they're correct
+    // Set date cells for each day - check if they have formulas first
     for i := 0; i < 7; i++ {
         dayDate := weekStart.AddDate(0, 0, i)
         daySerial := dayDate.Sub(excelEpoch).Hours() / 24
         
         // Regular time date column
-        file.SetCellValue(sheetName, "B"+strconv.Itoa(5+i), daySerial)
+        regularCell := "B" + strconv.Itoa(5+i)
+        regValue, _ := file.GetCellValue(sheetName, regularCell)
+        if !strings.HasPrefix(regValue, "=") {
+            file.SetCellValue(sheetName, regularCell, daySerial)
+        }
         
         // Overtime date column
-        file.SetCellValue(sheetName, "B"+strconv.Itoa(16+i), daySerial)
+        overtimeCell := "B" + strconv.Itoa(16+i)
+        otValue, _ := file.GetCellValue(sheetName, overtimeCell)
+        if !strings.HasPrefix(otValue, "=") {
+            file.SetCellValue(sheetName, overtimeCell, daySerial)
+        }
     }
 
     log.Printf("✅ Sheet %s populated successfully", sheetName)
