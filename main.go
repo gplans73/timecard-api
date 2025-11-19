@@ -1,7 +1,7 @@
 package main
 
 import (
-	"archive/zip" 
+	"archive/zip"
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
@@ -500,6 +500,19 @@ func createXLSXFile(req TimecardRequest) (*excelize.File, error) {
 	}
 
 	log.Printf("✅ Template loaded successfully")
+	
+	// DEBUG: Log template structure
+	sheetName := file.GetSheetName(0)
+	log.Printf("🔍 Template sheet name: %s", sheetName)
+	
+	// Log some sample cells to understand the template structure
+	sampleCells := []string{"A1", "B1", "C1", "D1", "E1", "A2", "B2", "C2", "D2", "E2", "A3", "B3", "C3", "D3", "E3"}
+	for _, cell := range sampleCells {
+		value, _ := file.GetCellValue(sheetName, cell)
+		if value != "" {
+			log.Printf("🔍 Cell %s = '%s'", cell, value)
+		}
+	}
 
 	// Check if multi-week data is provided
 	if req.Weeks != nil && len(req.Weeks) > 0 {
@@ -560,91 +573,117 @@ func createXLSXFile(req TimecardRequest) (*excelize.File, error) {
 func populateTimecardSheet(file *excelize.File, sheetName string, req TimecardRequest, entries []Entry, weekLabel string, weekNumber int) error {
 	log.Printf("✍️ Populating sheet: %s with %d entries", sheetName, len(entries))
 
-	// Set employee name (cell E2)
-	file.SetCellValue(sheetName, "E2", req.EmployeeName)
+	// Set employee name (cell M2)
+	file.SetCellValue(sheetName, "M2", req.EmployeeName)
 
-	// Set pay period and year (cells AL2 and AL3)
-	file.SetCellValue(sheetName, "AL2", req.PayPeriodNum)
-	file.SetCellValue(sheetName, "AL3", req.Year)
+	// Set pay period and year (cells AJ2 and AJ3)
+	file.SetCellValue(sheetName, "AJ2", req.PayPeriodNum)
+	file.SetCellValue(sheetName, "AJ3", req.Year)
 
-	// Set week label (cell AK4)
-	file.SetCellValue(sheetName, "AK4", weekLabel)
+	// Set week label (cell AJ4)
+	file.SetCellValue(sheetName, "AJ4", weekLabel)
 
-	// Parse dates and populate entries
-	// The template has date columns starting at row 6
-	// Columns: B=Sunday, D=Monday, F=Tuesday, H=Wednesday, J=Thursday, L=Friday, N=Saturday
-	dateColumnMap := map[string]string{
-		"Sunday":    "B",
-		"Monday":    "D",
-		"Tuesday":   "F",
-		"Wednesday": "H",
-		"Thursday":  "J",
-		"Friday":    "L",
-		"Saturday":  "N",
+	// Parse week start date and set it (cell B4)
+	weekStart, err := time.Parse(time.RFC3339, req.WeekStartDate)
+	if err != nil {
+		log.Printf("⚠️ Failed to parse week start date: %v", err)
+		weekStart = time.Now()
+	}
+	// Excel date serial format (days since 1900-01-01, with adjustment for Excel's leap year bug)
+	excelEpoch := time.Date(1899, 12, 30, 0, 0, 0, 0, time.UTC)
+	daysSinceEpoch := weekStart.Sub(excelEpoch).Hours() / 24
+	file.SetCellValue(sheetName, "B4", daysSinceEpoch)
+
+	// Job columns - up to 16 jobs can be displayed
+	// Code columns: C, E, G, I, K, M, O, Q, S, U, W, Y, AA, AC, AE, AG
+	// Job name columns: D, F, H, J, L, N, P, R, T, V, X, Z, AB, AD, AF, AH
+	// Hours columns (same as job name columns): D, F, H, J, L, N, P, R, T, V, X, Z, AB, AD, AF, AH
+	jobCodeColumns := []string{"C", "E", "G", "I", "K", "M", "O", "Q", "S", "U", "W", "Y", "AA", "AC", "AE", "AG"}
+	jobNameColumns := []string{"D", "F", "H", "J", "L", "N", "P", "R", "T", "V", "X", "Z", "AB", "AD", "AF", "AH"}
+	
+	// Set job headers (Row 4)
+	jobColumnMap := make(map[string]string) // Maps job code to its data column
+	for i, job := range req.Jobs {
+		if i >= len(jobCodeColumns) {
+			log.Printf("⚠️ Too many jobs (%d), template only supports %d jobs", len(req.Jobs), len(jobCodeColumns))
+			break
+		}
+		
+		// Set job code in code column (row 4)
+		file.SetCellValue(sheetName, jobCodeColumns[i]+"4", job.JobCode)
+		
+		// Set job name in job column (row 4)
+		file.SetCellValue(sheetName, jobNameColumns[i]+"4", job.JobName)
+		
+		// Map job code to its data column for later use
+		jobColumnMap[job.JobCode] = jobNameColumns[i]
+		
+		log.Printf("📋 Set job %d: Code=%s in %s4, Name=%s in %s4", i+1, job.JobCode, jobCodeColumns[i], job.JobName, jobNameColumns[i])
 	}
 
-	// Map to store entries by date and job
+	// Group entries by date and job
 	type EntryKey struct {
 		Date    string
 		JobCode string
 	}
 	entryMap := make(map[EntryKey]Entry)
-
 	for _, entry := range entries {
 		key := EntryKey{Date: entry.Date, JobCode: entry.JobCode}
 		entryMap[key] = entry
 	}
 
-	// Create a map of job codes to row numbers (starting at row 6)
-	jobRowMap := make(map[string]int)
-	startRow := 6
-	for i, job := range req.Jobs {
-		row := startRow + i
-		jobRowMap[job.JobCode] = row
-
-		// Set job code in column A
-		file.SetCellValue(sheetName, "A"+strconv.Itoa(row), job.JobCode)
-	}
-
 	// Fill in hours for each entry
 	for _, entry := range entryMap {
-		// Parse the date to get the day of week
-		t, err := time.Parse(time.RFC3339, entry.Date)
+		// Parse the entry date
+		entryDate, err := time.Parse(time.RFC3339, entry.Date)
 		if err != nil {
-			log.Printf("⚠️ Failed to parse date %s: %v", entry.Date, err)
+			log.Printf("⚠️ Failed to parse entry date %s: %v", entry.Date, err)
 			continue
 		}
 
-		dayOfWeek := t.Weekday().String()
-		col, ok := dateColumnMap[dayOfWeek]
-		if !ok {
-			log.Printf("⚠️ Unknown day of week: %s", dayOfWeek)
+		// Find the column for this job
+		jobCol, exists := jobColumnMap[entry.JobCode]
+		if !exists {
+			log.Printf("⚠️ Job code %s not found in job column map", entry.JobCode)
 			continue
 		}
 
-		row, ok := jobRowMap[entry.JobCode]
-		if !ok {
-			log.Printf("⚠️ Job code not found: %s", entry.JobCode)
+		// Calculate day of week offset from week start (0=Sunday, 6=Saturday)
+		dayOffset := int(entryDate.Sub(weekStart).Hours() / 24)
+		if dayOffset < 0 || dayOffset > 6 {
+			log.Printf("⚠️ Entry date %s is outside week range (offset=%d)", entry.Date, dayOffset)
 			continue
 		}
 
-		// Set the hours
-		cellRef := col + strconv.Itoa(row)
-		file.SetCellValue(sheetName, cellRef, entry.Hours)
-
-		// If overtime, you might want to mark it (depends on your template)
-		// For example, you could use a different cell or format
+		// Determine row based on whether it's overtime and day of week
+		var row int
 		if entry.Overtime {
-			// Set overtime hours in the next column (if your template supports it)
-			// This is an example - adjust based on your actual template structure
-			overtimeCol := string(rune(col[0]) + 1) // Next column
-			overtimeCellRef := overtimeCol + strconv.Itoa(row)
-			file.SetCellValue(sheetName, overtimeCellRef, entry.Hours)
+			// Overtime section: rows 16-22 (Sun-Sat)
+			row = 16 + dayOffset
+		} else {
+			// Regular time section: rows 5-11 (Sun-Sat)
+			row = 5 + dayOffset
 		}
+
+		// Set the hours in the appropriate cell
+		cellRef := jobCol + strconv.Itoa(row)
+		file.SetCellValue(sheetName, cellRef, entry.Hours)
+		log.Printf("✏️ Set %s = %.2f hours (Job: %s, Date: %s, OT: %v)", 
+			cellRef, entry.Hours, entry.JobCode, entryDate.Format("Mon Jan 2"), entry.Overtime)
 	}
 
-	// The template should have formulas for totals, so we don't need to calculate them manually
-	// If your template doesn't have formulas, you can add them here
+	// Set date cells for each day (B5-B11 for regular, B16-B22 for overtime)
+	// These should already be in the template, but we can ensure they're correct
+	for i := 0; i < 7; i++ {
+		dayDate := weekStart.AddDate(0, 0, i)
+		daySerial := dayDate.Sub(excelEpoch).Hours() / 24
+		
+		// Regular time date column
+		file.SetCellValue(sheetName, "B"+strconv.Itoa(5+i), daySerial)
+		
+		// Overtime date column
+		file.SetCellValue(sheetName, "B"+strconv.Itoa(16+i), daySerial)
+	}
 
 	log.Printf("✅ Sheet %s populated successfully", sheetName)
 	return nil
