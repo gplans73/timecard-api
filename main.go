@@ -525,7 +525,10 @@ func createXLSXFile(req TimecardRequest) (*excelize.File, error) {
         // Process each week
         for i, weekData := range req.Weeks {
             // Create a new sheet with the week label and copy from pristine template
-            newSheetIndex := file.NewSheet(weekData.WeekLabel)
+            newSheetIndex, err := file.NewSheet(weekData.WeekLabel)
+            if err != nil {
+                return nil, fmt.Errorf("failed to create new sheet for week %d: %v", i+1, err)
+            }
             if err := file.CopySheet(0, newSheetIndex); err != nil {
                 return nil, fmt.Errorf("failed to copy template sheet for week %d: %v", i+1, err)
             }
