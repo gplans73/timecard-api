@@ -522,7 +522,7 @@ func createXLSXFile(req TimecardRequest) (*excelize.File, error) {
 				if err != nil {
 					return nil, fmt.Errorf("failed to create sheet %s: %v", sheetName, err)
 				}
-				
+
 				// Copy from the first sheet (Week 1) to preserve formatting
 				if err := file.CopySheet(sourceIndex, newIndex); err != nil {
 					return nil, fmt.Errorf("failed to copy sheet: %v", err)
@@ -607,7 +607,7 @@ func populateTimecardSheet(file *excelize.File, sheetName string, req TimecardRe
 	}
 
 	// Fill in hours for each entry
-	for key, entry := range entryMap {
+	for _, entry := range entryMap {
 		// Parse the date to get the day of week
 		t, err := time.Parse(time.RFC3339, entry.Date)
 		if err != nil {
