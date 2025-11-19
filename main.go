@@ -6,9 +6,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
-	"mime/multipart"
-	"net/smtp"
 	"net/http"
 	"os"
 	"os/exec"
@@ -43,7 +42,7 @@ func main() {
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"status":  "ok",
 			"message": "Timecard API is running",
-			"version": "2.1.0",
+			"version": "2.2.0",
 			"endpoints": []string{
 				"/api/generate-timecard",
 				"/api/email-timecard",
@@ -224,15 +223,12 @@ func emailTimecardHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check SMTP configuration
-	smtpHost := os.Getenv("SMTP_HOST")
-	smtpPort := os.Getenv("SMTP_PORT")
-	smtpUser := os.Getenv("SMTP_USER")
-	smtpPass := os.Getenv("SMTP_PASS")
+	// Check SendGrid API key
+	sendgridAPIKey := os.Getenv("SMTP_PASS") // We use SMTP_PASS as the SendGrid API key
 	smtpFrom := os.Getenv("SMTP_FROM")
 
-	if smtpHost == "" || smtpPass == "" || smtpFrom == "" {
-		log.Printf("⚠️ SMTP not configured")
+	if sendgridAPIKey == "" || smtpFrom == "" {
+		log.Printf("⚠️ SendGrid not configured")
 		w.WriteHeader(http.StatusServiceUnavailable)
 		json.NewEncoder(w).Encode(map[string]string{
 			"status":  "error",
@@ -241,11 +237,7 @@ func emailTimecardHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if smtpPort == "" {
-		smtpPort = "587"
-	}
-
-	log.Printf("📧 Sending email from %s to %s", smtpFrom, req.To)
+	log.Printf("📧 Sending email from %s to %s via SendGrid HTTP API", smtpFrom, req.To)
 
 	// Generate Excel file
 	file, err := createXLSXFile(req.TimecardRequest)
@@ -287,8 +279,8 @@ func emailTimecardHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Send email with attachments
-	if err := sendEmailWithAttachments(smtpHost, smtpPort, smtpUser, smtpPass, smtpFrom, req.To, req.CC, req.Subject, req.Body, excelPath, pdfPath); err != nil {
+	// Send email via SendGrid HTTP API
+	if err := sendEmailViaSendGrid(sendgridAPIKey, smtpFrom, req.To, req.CC, req.Subject, req.Body, excelPath, pdfPath); err != nil {
 		log.Printf("❌ Failed to send email: %v", err)
 		respondError(w, err)
 		return
@@ -371,93 +363,122 @@ func respondError(w http.ResponseWriter, err error) {
 	json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 }
 
-func sendEmailWithAttachments(host, port, user, pass, from, to, cc, subject, body, excelPath, pdfPath string) error {
-	// Read Excel attachment
+func sendEmailViaSendGrid(apiKey, from, to, cc, subject, body, excelPath, pdfPath string) error {
+	log.Printf("📧 Using SendGrid HTTP API")
+
+	// Read attachments
 	excelData, err := os.ReadFile(excelPath)
 	if err != nil {
 		return fmt.Errorf("failed to read Excel file: %v", err)
 	}
 
-	// Read PDF attachment if exists
 	var pdfData []byte
 	if pdfPath != "" && fileExists(pdfPath) {
-		pdfData, err = os.ReadFile(pdfPath)
-		if err != nil {
-			log.Printf("⚠️ Failed to read PDF file: %v", err)
-		}
+		pdfData, _ = os.ReadFile(pdfPath)
 	}
 
-	// Build multipart email
-	var emailBuffer bytes.Buffer
-	writer := multipart.NewWriter(&emailBuffer)
-
-	// Email headers
-	boundary := writer.Boundary()
-	headers := []string{
-		"From: " + from,
-		"To: " + to,
-		"Subject: " + subject,
-		"MIME-Version: 1.0",
-		"Content-Type: multipart/mixed; boundary=" + boundary,
+	// Build SendGrid API request
+	type Attachment struct {
+		Content     string `json:"content"`
+		Type        string `json:"type"`
+		Filename    string `json:"filename"`
+		Disposition string `json:"disposition"`
 	}
 
-	if cc != "" {
-		headers = append(headers, "Cc: "+cc)
+	type Email struct {
+		Email string `json:"email"`
 	}
 
-	message := strings.Join(headers, "\r\n") + "\r\n\r\n"
-
-	// Add email body
-	part, _ := writer.CreatePart(map[string][]string{
-		"Content-Type": {"text/plain; charset=utf-8"},
-	})
-	part.Write([]byte(body))
-
-	// Add Excel attachment
-	excelFilename := filepath.Base(excelPath)
-	excelPart, _ := writer.CreatePart(map[string][]string{
-		"Content-Type":              {"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},
-		"Content-Disposition":       {"attachment; filename=\"" + excelFilename + "\""},
-		"Content-Transfer-Encoding": {"base64"},
-	})
-
-	encoder := base64.NewEncoder(base64.StdEncoding, excelPart)
-	encoder.Write(excelData)
-	encoder.Close()
-
-	// Add PDF attachment if exists
-	if len(pdfData) > 0 {
-		pdfFilename := filepath.Base(pdfPath)
-		pdfPart, _ := writer.CreatePart(map[string][]string{
-			"Content-Type":              {"application/pdf"},
-			"Content-Disposition":       {"attachment; filename=\"" + pdfFilename + "\""},
-			"Content-Transfer-Encoding": {"base64"},
-		})
-
-		encoder := base64.NewEncoder(base64.StdEncoding, pdfPart)
-		encoder.Write(pdfData)
-		encoder.Close()
+	type Personalization struct {
+		To []Email `json:"to"`
+		Cc []Email `json:"cc,omitempty"`
 	}
 
-	writer.Close()
+	type Content struct {
+		Type  string `json:"type"`
+		Value string `json:"value"`
+	}
 
-	// Combine headers and body
-	message += emailBuffer.String()
+	type SendGridRequest struct {
+		Personalizations []Personalization `json:"personalizations"`
+		From             Email             `json:"from"`
+		Subject          string            `json:"subject"`
+		Content          []Content         `json:"content"`
+		Attachments      []Attachment      `json:"attachments"`
+	}
 
-	// Send via SMTP
-	auth := smtp.PlainAuth("", user, pass, host)
-	addr := host + ":" + port
+	// Build request
+	req := SendGridRequest{
+		Personalizations: []Personalization{
+			{
+				To: []Email{{Email: to}},
+			},
+		},
+		From:    Email{Email: from},
+		Subject: subject,
+		Content: []Content{
+			{
+				Type:  "text/plain",
+				Value: body,
+			},
+		},
+		Attachments: []Attachment{
+			{
+				Content:     base64.StdEncoding.EncodeToString(excelData),
+				Type:        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+				Filename:    filepath.Base(excelPath),
+				Disposition: "attachment",
+			},
+		},
+	}
 
-	recipients := []string{to}
+	// Add CC if provided
 	if cc != "" {
 		ccAddresses := strings.Split(cc, ",")
 		for _, addr := range ccAddresses {
-			recipients = append(recipients, strings.TrimSpace(addr))
+			req.Personalizations[0].Cc = append(req.Personalizations[0].Cc, Email{Email: strings.TrimSpace(addr)})
 		}
 	}
 
-	log.Printf("📧 Sending to SMTP server %s:%s", host, port)
-	return smtp.SendMail(addr, auth, from, recipients, []byte(message))
+	// Add PDF if exists
+	if len(pdfData) > 0 {
+		req.Attachments = append(req.Attachments, Attachment{
+			Content:     base64.StdEncoding.EncodeToString(pdfData),
+			Type:        "application/pdf",
+			Filename:    filepath.Base(pdfPath),
+			Disposition: "attachment",
+		})
+	}
+
+	// Encode JSON
+	jsonData, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("failed to encode JSON: %v", err)
+	}
+
+	// Send HTTP request to SendGrid
+	httpReq, err := http.NewRequest("POST", "https://api.sendgrid.com/v3/mail/send", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %v", err)
+	}
+
+	httpReq.Header.Set("Authorization", "Bearer "+apiKey)
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("HTTP request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 202 {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("SendGrid API error: %d - %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	log.Printf("✅ Email sent via SendGrid HTTP API (status: %d)", resp.StatusCode)
+	return nil
 }
 
 func createXLSXFile(req TimecardRequest) (*excelize.File, error) {
