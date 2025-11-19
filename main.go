@@ -518,37 +518,43 @@ func createXLSXFile(req TimecardRequest) (*excelize.File, error) {
     if req.Weeks != nil && len(req.Weeks) > 0 {
         log.Printf("📊 Processing multi-week timecard (%d weeks)", len(req.Weeks))
 
-        // Rename original template to preserve it for copying
-        originalTemplateName := file.GetSheetName(0)
-        file.SetSheetName(originalTemplateName, "TEMPLATE_PRISTINE")
+        // Get the original template sheet name (index 0)
+        originalSheetName := file.GetSheetName(0)
         
         // Process each week
         for i, weekData := range req.Weeks {
-            // Create a new sheet with the week label and copy from pristine template
-            newSheetIndex, err := file.NewSheet(weekData.WeekLabel)
-            if err != nil {
-                return nil, fmt.Errorf("failed to create new sheet for week %d: %v", i+1, err)
-            }
-            if err := file.CopySheet(0, newSheetIndex); err != nil {
-                return nil, fmt.Errorf("failed to copy template sheet for week %d: %v", i+1, err)
-            }
+            var targetSheetName string
             
-            currentSheetName := weekData.WeekLabel
-            log.Printf("📝 Created sheet: %s (index %d)", currentSheetName, newSheetIndex)
+            if i == 0 {
+                // First week: rename the existing template sheet
+                targetSheetName = weekData.WeekLabel
+                if err := file.SetSheetName(originalSheetName, targetSheetName); err != nil {
+                    return nil, fmt.Errorf("failed to rename first sheet to %s: %v", targetSheetName, err)
+                }
+                log.Printf("📝 Renamed original sheet to: %s", targetSheetName)
+            } else {
+                // Subsequent weeks: create new sheet and copy from first week (index 0)
+                targetSheetName = weekData.WeekLabel
+                newSheetIndex, err := file.NewSheet(targetSheetName)
+                if err != nil {
+                    return nil, fmt.Errorf("failed to create new sheet for week %d: %v", i+1, err)
+                }
+                
+                // Copy content from the first week sheet (which is at index 0)
+                if err := file.CopySheet(0, newSheetIndex); err != nil {
+                    return nil, fmt.Errorf("failed to copy template sheet for week %d: %v", i+1, err)
+                }
+                log.Printf("📝 Created and copied sheet: %s (index %d)", targetSheetName, newSheetIndex)
+            }
             
             // Populate this week's data
-            if err := populateTimecardSheet(file, currentSheetName, req, weekData.Entries, weekData.WeekLabel, weekData.WeekNumber); err != nil {
-                return nil, fmt.Errorf("failed to populate sheet %s: %v", currentSheetName, err)
+            if err := populateTimecardSheet(file, targetSheetName, req, weekData.Entries, weekData.WeekLabel, weekData.WeekNumber); err != nil {
+                return nil, fmt.Errorf("failed to populate sheet %s: %v", targetSheetName, err)
             }
-        }
-        
-        // Delete the pristine template sheet
-        if err := file.DeleteSheet("TEMPLATE_PRISTINE"); err != nil {
-            log.Printf("⚠️ Failed to delete pristine template: %v", err)
         }
 
         // Set the first week as active
-        file.SetActiveSheet(1) // Index 1 because we deleted index 0 (pristine)
+        file.SetActiveSheet(0)
     } else {
         // Single week: use the template's existing sheet
         log.Printf("📊 Processing single-week timecard")
