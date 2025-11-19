@@ -518,72 +518,75 @@ func createXLSXFile(req TimecardRequest) (*excelize.File, error) {
 	if req.Weeks != nil && len(req.Weeks) > 0 {
 		log.Printf("📊 Processing multi-week timecard (%d weeks)", len(req.Weeks))
 
+		// Store the original template sheet name before we start modifying
+		originalTemplateName := file.GetSheetName(0)
+		
 		// Process each week
 		for i, weekData := range req.Weeks {
 			var currentSheetName string
+			var currentSheetIndex int
 			
 			if i == 0 {
-				// Use the template sheet for Week 1
-				currentSheetName = file.GetSheetName(0)
-				file.SetSheetName(currentSheetName, weekData.WeekLabel)
+				// Use the template sheet for Week 1, rename it
+				currentSheetIndex = 0
+				file.SetSheetName(originalTemplateName, weekData.WeekLabel)
 				currentSheetName = weekData.WeekLabel
-				log.Printf("📝 Using template for: %s", currentSheetName)
+				log.Printf("📝 Renamed template sheet to: %s", currentSheetName)
 			} else {
-				// For subsequent weeks, we need to copy the ORIGINAL template
-				// Load a fresh template for each additional week
-				templateFile, err := excelize.OpenFile("template.xlsx")
+				// For subsequent weeks, copy from the RENAMED first sheet (index 0)
+				// Copy sheet at index 0 (the first week, which has the template structure)
+				newSheetIndex, err := file.NewSheet(weekData.WeekLabel)
 				if err != nil {
-					return nil, fmt.Errorf("failed to reload template for week %d: %v", i+1, err)
-				}
-				
-				// Get the first sheet from the fresh template
-				templateSheetName := templateFile.GetSheetName(0)
-				
-				// Create new sheet with the week label
-				newIndex, err := file.NewSheet(weekData.WeekLabel)
-				if err != nil {
-					templateFile.Close()
 					return nil, fmt.Errorf("failed to create sheet %s: %v", weekData.WeekLabel, err)
 				}
 				
-				// Copy all rows and columns from template to new sheet
-				rows, err := templateFile.GetRows(templateSheetName)
+				// Now copy the content from sheet 0 to the new sheet
+				// We need to copy it manually to avoid style corruption
+				sourceSheetName := file.GetSheetName(0)
+				
+				// Get all rows from the source sheet
+				rows, err := file.GetRows(sourceSheetName)
+				if err != nil {
+					return nil, fmt.Errorf("failed to get rows from source: %v", err)
+				}
+				
+				// Copy all cell values
+				for rowIdx, row := range rows {
+					for colIdx, cellValue := range row {
+						cellName, _ := excelize.CoordinatesToCellName(colIdx+1, rowIdx+1)
+						file.SetCellValue(weekData.WeekLabel, cellName, cellValue)
+					}
+				}
+				
+				// Copy merged cells
+				mergedCells, err := file.GetMergeCells(sourceSheetName)
 				if err == nil {
-					for rowIdx, row := range rows {
-						for colIdx, cellValue := range row {
-							cellName, _ := excelize.CoordinatesToCellName(colIdx+1, rowIdx+1)
-							file.SetCellValue(weekData.WeekLabel, cellName, cellValue)
-							
-							// Copy cell style
-							styleID, _ := templateFile.GetCellStyle(templateSheetName, cellName)
-							if styleID > 0 {
-								file.SetCellStyle(weekData.WeekLabel, cellName, cellName, styleID)
-							}
-						}
+					for _, mc := range mergedCells {
+						file.MergeCell(weekData.WeekLabel, mc.GetStartAxis(), mc.GetEndAxis())
 					}
 				}
 				
 				// Copy column widths
-				for col := 1; col <= 40; col++ { // Copy first 40 columns
+				for col := 1; col <= 40; col++ {
 					colName, _ := excelize.ColumnNumberToName(col)
-					width, _ := templateFile.GetColWidth(templateSheetName, colName)
-					if width > 0 {
+					width, err := file.GetColWidth(sourceSheetName, colName)
+					if err == nil && width > 0 {
 						file.SetColWidth(weekData.WeekLabel, colName, colName, width)
 					}
 				}
 				
 				// Copy row heights
-				for row := 1; row <= 30; row++ { // Copy first 30 rows
-					height, _ := templateFile.GetRowHeight(templateSheetName, row)
-					if height > 0 {
+				for row := 1; row <= 30; row++ {
+					height, err := file.GetRowHeight(sourceSheetName, row)
+					if err == nil && height > 0 {
 						file.SetRowHeight(weekData.WeekLabel, row, height)
 					}
 				}
 				
-				templateFile.Close()
-				file.SetActiveSheet(newIndex)
+				file.SetActiveSheet(newSheetIndex)
+				currentSheetIndex = newSheetIndex
 				currentSheetName = weekData.WeekLabel
-				log.Printf("📝 Created sheet from template: %s", currentSheetName)
+				log.Printf("📝 Created and populated new sheet: %s", currentSheetName)
 			}
 
 			// Populate the sheet with this week's data
