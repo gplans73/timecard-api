@@ -493,7 +493,7 @@ func sendEmailViaSendGrid(apiKey, from, to, cc, subject, body, excelPath, pdfPat
 func createXLSXFile(req TimecardRequest) (*excelize.File, error) {
     log.Printf("📂 Loading template.xlsx...")
 
-    // Load the template file (THIS IS THE KEY CHANGE!)
+    // Load the template file
     file, err := excelize.OpenFile("template.xlsx")
     if err != nil {
         return nil, fmt.Errorf("failed to load template: %v", err)
@@ -524,18 +524,10 @@ func createXLSXFile(req TimecardRequest) (*excelize.File, error) {
         
         // Process each week
         for i, weekData := range req.Weeks {
-            // Copy from index 0 (the pristine template)
-            newSheetIndex, err := file.CopySheet(0)
-            if err != nil {
+            // Create a new sheet with the week label and copy from pristine template
+            newSheetIndex := file.NewSheet(weekData.WeekLabel)
+            if err := file.CopySheet(0, newSheetIndex); err != nil {
                 return nil, fmt.Errorf("failed to copy template sheet for week %d: %v", i+1, err)
-            }
-            
-            // Get the name of the newly copied sheet
-            copiedSheetName := file.GetSheetName(newSheetIndex)
-            
-            // Rename it to the week label
-            if err := file.SetSheetName(copiedSheetName, weekData.WeekLabel); err != nil {
-                return nil, fmt.Errorf("failed to rename sheet to %s: %v", weekData.WeekLabel, err)
             }
             
             currentSheetName := weekData.WeekLabel
@@ -553,7 +545,7 @@ func createXLSXFile(req TimecardRequest) (*excelize.File, error) {
         }
 
         // Set the first week as active
-        file.SetActiveSheet(0)
+        file.SetActiveSheet(1) // Index 1 because we deleted index 0 (pristine)
     } else {
         // Single week: use the template's existing sheet
         log.Printf("📊 Processing single-week timecard")
@@ -691,4 +683,3 @@ func populateTimecardSheet(file *excelize.File, sheetName string, req TimecardRe
     log.Printf("✅ Sheet %s populated successfully", sheetName)
     return nil
 }
-
