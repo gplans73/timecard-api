@@ -1,4 +1,3 @@
-
 package main
 
 /*
@@ -13,7 +12,6 @@ These environment variables should be set in your deployment environment securel
 */
 
 import (
-	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -84,7 +82,11 @@ func generateTimecardHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Create XLSX file using excelize
 	file := excelize.NewFile()
-	index := file.NewSheet("Sheet1")
+	index, err := file.NewSheet("Sheet1")
+	if err != nil {
+		respondErr(w, err)
+		return
+	}
 	file.SetCellValue("Sheet1", "A1", "Employee Name")
 	file.SetCellValue("Sheet1", "B1", req.EmployeeName)
 	file.SetCellValue("Sheet1", "A2", "Pay Period")
@@ -176,12 +178,4 @@ func main() {
 	http.HandleFunc("/health", healthHandler)
 	log.Printf("Server listening on :%s", port)
 	log.Fatal(http.ListenAndServe(":"+port, nil))
-}
-
-// sendEmail sends an email using SMTP credentials from environment variables.
-// SMTP_USER must be "apikey" and SMTP_PASS should be your SendGrid API key for SendGrid compatibility.
-func sendEmail(to, subject, body string) error {
-	// Implementation omitted for brevity
-	// Use os.Getenv("SMTP_HOST"), os.Getenv("SMTP_PORT"), os.Getenv("SMTP_USER"), os.Getenv("SMTP_PASS")
-	return nil
 }
