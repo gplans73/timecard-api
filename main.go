@@ -518,34 +518,77 @@ func createXLSXFile(req TimecardRequest) (*excelize.File, error) {
 	if req.Weeks != nil && len(req.Weeks) > 0 {
 		log.Printf("📊 Processing multi-week timecard (%d weeks)", len(req.Weeks))
 
-		// Get the template sheet name (usually "Sheet1" or "Timecard")
-		templateSheetName := file.GetSheetName(0)
-
+		// Process each week
 		for i, weekData := range req.Weeks {
-			sheetName := weekData.WeekLabel // e.g., "Week 1", "Week 2"
-
+			var currentSheetName string
+			
 			if i == 0 {
-				// Rename the first sheet
-				file.SetSheetName(templateSheetName, sheetName)
-				log.Printf("📝 Renamed template sheet to: %s", sheetName)
+				// Use the template sheet for Week 1
+				currentSheetName = file.GetSheetName(0)
+				file.SetSheetName(currentSheetName, weekData.WeekLabel)
+				currentSheetName = weekData.WeekLabel
+				log.Printf("📝 Using template for: %s", currentSheetName)
 			} else {
-				// Clone the first sheet to preserve all formatting
-				sourceIndex := 0
-				newIndex, err := file.NewSheet(sheetName)
+				// For subsequent weeks, we need to copy the ORIGINAL template
+				// Load a fresh template for each additional week
+				templateFile, err := excelize.OpenFile("template.xlsx")
 				if err != nil {
-					return nil, fmt.Errorf("failed to create sheet %s: %v", sheetName, err)
+					return nil, fmt.Errorf("failed to reload template for week %d: %v", i+1, err)
 				}
-
-				// Copy from the first sheet (Week 1) to preserve formatting
-				if err := file.CopySheet(sourceIndex, newIndex); err != nil {
-					return nil, fmt.Errorf("failed to copy sheet: %v", err)
+				
+				// Get the first sheet from the fresh template
+				templateSheetName := templateFile.GetSheetName(0)
+				
+				// Create new sheet with the week label
+				newIndex, err := file.NewSheet(weekData.WeekLabel)
+				if err != nil {
+					templateFile.Close()
+					return nil, fmt.Errorf("failed to create sheet %s: %v", weekData.WeekLabel, err)
 				}
-				log.Printf("📝 Created sheet: %s (cloned from Week 1)", sheetName)
+				
+				// Copy all rows and columns from template to new sheet
+				rows, err := templateFile.GetRows(templateSheetName)
+				if err == nil {
+					for rowIdx, row := range rows {
+						for colIdx, cellValue := range row {
+							cellName, _ := excelize.CoordinatesToCellName(colIdx+1, rowIdx+1)
+							file.SetCellValue(weekData.WeekLabel, cellName, cellValue)
+							
+							// Copy cell style
+							styleID, _ := templateFile.GetCellStyle(templateSheetName, cellName)
+							if styleID > 0 {
+								file.SetCellStyle(weekData.WeekLabel, cellName, cellName, styleID)
+							}
+						}
+					}
+				}
+				
+				// Copy column widths
+				for col := 1; col <= 40; col++ { // Copy first 40 columns
+					colName, _ := excelize.ColumnNumberToName(col)
+					width, _ := templateFile.GetColWidth(templateSheetName, colName)
+					if width > 0 {
+						file.SetColWidth(weekData.WeekLabel, colName, colName, width)
+					}
+				}
+				
+				// Copy row heights
+				for row := 1; row <= 30; row++ { // Copy first 30 rows
+					height, _ := templateFile.GetRowHeight(templateSheetName, row)
+					if height > 0 {
+						file.SetRowHeight(weekData.WeekLabel, row, height)
+					}
+				}
+				
+				templateFile.Close()
+				file.SetActiveSheet(newIndex)
+				currentSheetName = weekData.WeekLabel
+				log.Printf("📝 Created sheet from template: %s", currentSheetName)
 			}
 
 			// Populate the sheet with this week's data
-			if err := populateTimecardSheet(file, sheetName, req, weekData.Entries, weekData.WeekLabel, weekData.WeekNumber); err != nil {
-				return nil, fmt.Errorf("failed to populate sheet %s: %v", sheetName, err)
+			if err := populateTimecardSheet(file, currentSheetName, req, weekData.Entries, weekData.WeekLabel, weekData.WeekNumber); err != nil {
+				return nil, fmt.Errorf("failed to populate sheet %s: %v", currentSheetName, err)
 			}
 		}
 
