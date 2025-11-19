@@ -20,6 +20,12 @@ import (
 )
 
 func main() {
+	// Check for template file on startup
+	if _, err := os.Stat("template.xlsx"); err != nil {
+		log.Fatal("❌ template.xlsx not found! Make sure it's in the same directory as the executable.")
+	}
+	log.Println("✅ template.xlsx found")
+
 	// Test LibreOffice on startup
 	log.Println("🔍 Checking LibreOffice installation...")
 	cmd := exec.Command("libreoffice", "--version")
@@ -42,7 +48,7 @@ func main() {
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"status":  "ok",
 			"message": "Timecard API is running",
-			"version": "2.2.0",
+			"version": "2.3.0",
 			"endpoints": []string{
 				"/api/generate-timecard",
 				"/api/email-timecard",
@@ -123,13 +129,14 @@ func generateTimecardHandler(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("📥 Generating timecard for %s (IncludePDF: %v)", req.EmployeeName, req.IncludePDF)
 
-	// Create xlsx file
+	// Create xlsx file from template
 	file, err := createXLSXFile(req)
 	if err != nil {
 		log.Printf("❌ Failed to create Excel: %v", err)
 		respondError(w, err)
 		return
 	}
+	defer file.Close()
 
 	// Create temp directory
 	tempDir, err := os.MkdirTemp("", "timecard-*")
@@ -141,7 +148,7 @@ func generateTimecardHandler(w http.ResponseWriter, r *http.Request) {
 	defer os.RemoveAll(tempDir)
 
 	// Save Excel file
-	excelFilename := fmt.Sprintf("Timecard_%s_%s.xlsx", req.EmployeeName, time.Now().Format("2006-01-02"))
+	excelFilename := fmt.Sprintf("Timecard_%s_%d(%d).xlsx", req.EmployeeName, req.Year, req.PayPeriodNum)
 	excelPath := filepath.Join(tempDir, excelFilename)
 
 	if err := file.SaveAs(excelPath); err != nil {
@@ -155,7 +162,7 @@ func generateTimecardHandler(w http.ResponseWriter, r *http.Request) {
 	// Generate PDF if requested
 	var pdfPath string
 	if req.IncludePDF {
-		pdfFilename := fmt.Sprintf("Timecard_%s_%s.pdf", req.EmployeeName, time.Now().Format("2006-01-02"))
+		pdfFilename := fmt.Sprintf("Timecard_%s_%d(%d).pdf", req.EmployeeName, req.Year, req.PayPeriodNum)
 		pdfPath = filepath.Join(tempDir, pdfFilename)
 
 		log.Printf("🔄 Converting Excel to PDF...")
@@ -189,7 +196,7 @@ func generateTimecardHandler(w http.ResponseWriter, r *http.Request) {
 		zipWriter.Close()
 
 		w.Header().Set("Content-Type", "application/zip")
-		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"timecard_%s.zip\"", time.Now().Format("2006-01-02")))
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"timecard_%s_%d(%d).zip\"", req.EmployeeName, req.Year, req.PayPeriodNum))
 		w.Write(zipBuffer.Bytes())
 		log.Printf("✅ Sent ZIP file: %d bytes", zipBuffer.Len())
 	} else {
@@ -239,12 +246,13 @@ func emailTimecardHandler(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("📧 Sending email from %s to %s via SendGrid HTTP API", smtpFrom, req.To)
 
-	// Generate Excel file
+	// Generate Excel file from template
 	file, err := createXLSXFile(req.TimecardRequest)
 	if err != nil {
 		respondError(w, err)
 		return
 	}
+	defer file.Close()
 
 	// Create temp directory
 	tempDir, err := os.MkdirTemp("", "timecard-*")
@@ -255,7 +263,7 @@ func emailTimecardHandler(w http.ResponseWriter, r *http.Request) {
 	defer os.RemoveAll(tempDir)
 
 	// Save Excel
-	excelFilename := fmt.Sprintf("Timecard_%s_%s.xlsx", req.EmployeeName, time.Now().Format("2006-01-02"))
+	excelFilename := fmt.Sprintf("Timecard_%s_%d(%d).xlsx", req.EmployeeName, req.Year, req.PayPeriodNum)
 	excelPath := filepath.Join(tempDir, excelFilename)
 	if err := file.SaveAs(excelPath); err != nil {
 		respondError(w, err)
@@ -267,7 +275,7 @@ func emailTimecardHandler(w http.ResponseWriter, r *http.Request) {
 	// Generate PDF if requested
 	var pdfPath string
 	if req.IncludePDF {
-		pdfFilename := fmt.Sprintf("Timecard_%s_%s.pdf", req.EmployeeName, time.Now().Format("2006-01-02"))
+		pdfFilename := fmt.Sprintf("Timecard_%s_%d(%d).pdf", req.EmployeeName, req.Year, req.PayPeriodNum)
 		pdfPath = filepath.Join(tempDir, pdfFilename)
 
 		log.Printf("🔄 Converting Excel to PDF for email...")
@@ -481,73 +489,163 @@ func sendEmailViaSendGrid(apiKey, from, to, cc, subject, body, excelPath, pdfPat
 	return nil
 }
 
+// createXLSXFile loads the template and populates it with timecard data
 func createXLSXFile(req TimecardRequest) (*excelize.File, error) {
-	file := excelize.NewFile()
+	log.Printf("📂 Loading template.xlsx...")
 
-	sheetName := "Timecard"
-	_, err := file.NewSheet(sheetName)
+	// Load the template file (THIS IS THE KEY CHANGE!)
+	file, err := excelize.OpenFile("template.xlsx")
 	if err != nil {
-		return nil, fmt.Errorf("failed to create sheet: %v", err)
+		return nil, fmt.Errorf("failed to load template: %v", err)
 	}
 
-	file.DeleteSheet("Sheet1")
+	log.Printf("✅ Template loaded successfully")
 
-	file.SetColWidth(sheetName, "A", "A", 12)
-	file.SetColWidth(sheetName, "B", "B", 20)
-	file.SetColWidth(sheetName, "C", "C", 10)
-	file.SetColWidth(sheetName, "D", "D", 10)
+	// Check if multi-week data is provided
+	if req.Weeks != nil && len(req.Weeks) > 0 {
+		log.Printf("📊 Processing multi-week timecard (%d weeks)", len(req.Weeks))
 
-	headerStyle, _ := file.NewStyle(&excelize.Style{
-		Font:      &excelize.Font{Bold: true, Size: 12},
-		Fill:      excelize.Fill{Type: "pattern", Color: []string{"#4472C4"}, Pattern: 1},
-		Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center"},
-	})
+		// Get the template sheet name (usually "Sheet1" or "Timecard")
+		templateSheetName := file.GetSheetName(0)
 
-	row := 1
-	file.SetCellValue(sheetName, "A"+strconv.Itoa(row), "TIMECARD")
-	file.MergeCell(sheetName, "A"+strconv.Itoa(row), "D"+strconv.Itoa(row))
-	file.SetCellStyle(sheetName, "A"+strconv.Itoa(row), "D"+strconv.Itoa(row), headerStyle)
-	row++
+		for i, weekData := range req.Weeks {
+			sheetName := weekData.WeekLabel // e.g., "Week 1", "Week 2"
 
-	file.SetCellValue(sheetName, "A"+strconv.Itoa(row), "Employee:")
-	file.SetCellValue(sheetName, "B"+strconv.Itoa(row), req.EmployeeName)
-	row++
+			if i == 0 {
+				// Rename the first sheet
+				file.SetSheetName(templateSheetName, sheetName)
+				log.Printf("📝 Renamed template sheet to: %s", sheetName)
+			} else {
+				// Clone the first sheet to preserve all formatting
+				sourceIndex := 0
+				newIndex, err := file.NewSheet(sheetName)
+				if err != nil {
+					return nil, fmt.Errorf("failed to create sheet %s: %v", sheetName, err)
+				}
+				
+				// Copy from the first sheet (Week 1) to preserve formatting
+				if err := file.CopySheet(sourceIndex, newIndex); err != nil {
+					return nil, fmt.Errorf("failed to copy sheet: %v", err)
+				}
+				log.Printf("📝 Created sheet: %s (cloned from Week 1)", sheetName)
+			}
 
-	file.SetCellValue(sheetName, "A"+strconv.Itoa(row), "Pay Period:")
-	file.SetCellValue(sheetName, "B"+strconv.Itoa(row), req.PayPeriodNum)
-	row++
-
-	file.SetCellValue(sheetName, "A"+strconv.Itoa(row), "Year:")
-	file.SetCellValue(sheetName, "B"+strconv.Itoa(row), req.Year)
-	row += 2
-
-	file.SetCellValue(sheetName, "A"+strconv.Itoa(row), "Date")
-	file.SetCellValue(sheetName, "B"+strconv.Itoa(row), "Job Code")
-	file.SetCellValue(sheetName, "C"+strconv.Itoa(row), "Hours")
-	file.SetCellValue(sheetName, "D"+strconv.Itoa(row), "Overtime")
-	file.SetCellStyle(sheetName, "A"+strconv.Itoa(row), "D"+strconv.Itoa(row), headerStyle)
-	row++
-
-	for _, entry := range req.Entries {
-		file.SetCellValue(sheetName, "A"+strconv.Itoa(row), entry.Date)
-		file.SetCellValue(sheetName, "B"+strconv.Itoa(row), entry.JobCode)
-		file.SetCellValue(sheetName, "C"+strconv.Itoa(row), entry.Hours)
-		overtimeText := "No"
-		if entry.Overtime {
-			overtimeText = "Yes"
+			// Populate the sheet with this week's data
+			if err := populateTimecardSheet(file, sheetName, req, weekData.Entries, weekData.WeekLabel, weekData.WeekNumber); err != nil {
+				return nil, fmt.Errorf("failed to populate sheet %s: %v", sheetName, err)
+			}
 		}
-		file.SetCellValue(sheetName, "D"+strconv.Itoa(row), overtimeText)
-		row++
+
+		// Set the first week as active
+		file.SetActiveSheet(0)
+	} else {
+		// Single week: use the template's existing sheet
+		log.Printf("📊 Processing single-week timecard")
+		templateSheetName := file.GetSheetName(0)
+
+		if req.WeekNumberLabel != "" {
+			file.SetSheetName(templateSheetName, req.WeekNumberLabel)
+		}
+
+		if err := populateTimecardSheet(file, file.GetSheetName(0), req, req.Entries, req.WeekNumberLabel, 1); err != nil {
+			return nil, fmt.Errorf("failed to populate sheet: %v", err)
+		}
 	}
 
-	row++
-	totalHours := 0.0
-	for _, entry := range req.Entries {
-		totalHours += entry.Hours
-	}
-	file.SetCellValue(sheetName, "B"+strconv.Itoa(row), "Total Hours:")
-	file.SetCellValue(sheetName, "C"+strconv.Itoa(row), totalHours)
-	file.SetCellStyle(sheetName, "B"+strconv.Itoa(row), "C"+strconv.Itoa(row), headerStyle)
-
+	log.Printf("✅ Excel file populated with data")
 	return file, nil
+}
+
+// populateTimecardSheet fills in a single sheet with timecard data
+func populateTimecardSheet(file *excelize.File, sheetName string, req TimecardRequest, entries []Entry, weekLabel string, weekNumber int) error {
+	log.Printf("✍️ Populating sheet: %s with %d entries", sheetName, len(entries))
+
+	// Set employee name (cell E2)
+	file.SetCellValue(sheetName, "E2", req.EmployeeName)
+
+	// Set pay period and year (cells AL2 and AL3)
+	file.SetCellValue(sheetName, "AL2", req.PayPeriodNum)
+	file.SetCellValue(sheetName, "AL3", req.Year)
+
+	// Set week label (cell AK4)
+	file.SetCellValue(sheetName, "AK4", weekLabel)
+
+	// Parse dates and populate entries
+	// The template has date columns starting at row 6
+	// Columns: B=Sunday, D=Monday, F=Tuesday, H=Wednesday, J=Thursday, L=Friday, N=Saturday
+	dateColumnMap := map[string]string{
+		"Sunday":    "B",
+		"Monday":    "D",
+		"Tuesday":   "F",
+		"Wednesday": "H",
+		"Thursday":  "J",
+		"Friday":    "L",
+		"Saturday":  "N",
+	}
+
+	// Map to store entries by date and job
+	type EntryKey struct {
+		Date    string
+		JobCode string
+	}
+	entryMap := make(map[EntryKey]Entry)
+
+	for _, entry := range entries {
+		key := EntryKey{Date: entry.Date, JobCode: entry.JobCode}
+		entryMap[key] = entry
+	}
+
+	// Create a map of job codes to row numbers (starting at row 6)
+	jobRowMap := make(map[string]int)
+	startRow := 6
+	for i, job := range req.Jobs {
+		row := startRow + i
+		jobRowMap[job.JobCode] = row
+
+		// Set job code in column A
+		file.SetCellValue(sheetName, "A"+strconv.Itoa(row), job.JobCode)
+	}
+
+	// Fill in hours for each entry
+	for key, entry := range entryMap {
+		// Parse the date to get the day of week
+		t, err := time.Parse(time.RFC3339, entry.Date)
+		if err != nil {
+			log.Printf("⚠️ Failed to parse date %s: %v", entry.Date, err)
+			continue
+		}
+
+		dayOfWeek := t.Weekday().String()
+		col, ok := dateColumnMap[dayOfWeek]
+		if !ok {
+			log.Printf("⚠️ Unknown day of week: %s", dayOfWeek)
+			continue
+		}
+
+		row, ok := jobRowMap[entry.JobCode]
+		if !ok {
+			log.Printf("⚠️ Job code not found: %s", entry.JobCode)
+			continue
+		}
+
+		// Set the hours
+		cellRef := col + strconv.Itoa(row)
+		file.SetCellValue(sheetName, cellRef, entry.Hours)
+
+		// If overtime, you might want to mark it (depends on your template)
+		// For example, you could use a different cell or format
+		if entry.Overtime {
+			// Set overtime hours in the next column (if your template supports it)
+			// This is an example - adjust based on your actual template structure
+			overtimeCol := string(rune(col[0]) + 1) // Next column
+			overtimeCellRef := overtimeCol + strconv.Itoa(row)
+			file.SetCellValue(sheetName, overtimeCellRef, entry.Hours)
+		}
+	}
+
+	// The template should have formulas for totals, so we don't need to calculate them manually
+	// If your template doesn't have formulas, you can add them here
+
+	log.Printf("✅ Sheet %s populated successfully", sheetName)
+	return nil
 }
