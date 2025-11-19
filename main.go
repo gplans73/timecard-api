@@ -518,83 +518,101 @@ func createXLSXFile(req TimecardRequest) (*excelize.File, error) {
     if req.Weeks != nil && len(req.Weeks) > 0 {
         log.Printf("📊 Processing multi-week timecard (%d weeks)", len(req.Weeks))
 
-        // Store the original template sheet name before we start modifying
+        // CRITICAL: Create a pristine copy of the template BEFORE any modifications
+        // This ensures we can copy it multiple times without corrupting styles
         originalTemplateName := file.GetSheetName(0)
+        pristineTemplateName := "PRISTINE_TEMPLATE_DO_NOT_USE"
+        
+        // Copy the original template to preserve it
+        pristineIndex, err := file.NewSheet(pristineTemplateName)
+        if err != nil {
+            return nil, fmt.Errorf("failed to create pristine template sheet: %v", err)
+        }
+        
+        // Actually, NewSheet creates an empty sheet. We need to copy the original first
+        // Let's use a different approach: copy the template for each week, then delete the original
+        
+        // Create all week sheets by copying from index 0 BEFORE any modifications
+        weekSheetNames := make([]string, len(req.Weeks))
+        for i, weekData := range req.Weeks {
+            if i == 0 {
+                // Rename the original template for week 1
+                file.SetSheetName(originalTemplateName, weekData.WeekLabel)
+                weekSheetNames[i] = weekData.WeekLabel
+                log.Printf("📝 Renamed original template to: %s", weekSheetNames[i])
+            } else {
+                // Copy from the ORIGINAL sheet (index 0) before it was modified
+                // Wait, after we rename it, index 0 still refers to it
+                // The issue is that CopySheet copies the CURRENT state, not the original
+                
+                // Alternative: Load the template fresh for each additional week
+                log.Printf("📂 Loading fresh template for week %d...", i+1)
+                templateFile, err := excelize.OpenFile("template.xlsx")
+                if err != nil {
+                    return nil, fmt.Errorf("failed to load template for week %d: %v", i+1, err)
+                }
+                
+                // Copy the template sheet into our main file
+                // Get the template sheet name
+                templateSheetName := templateFile.GetSheetName(0)
+                
+                // Create a new sheet in our file with the week label
+                newIndex, err := file.NewSheet(weekData.WeekLabel)
+                if err != nil {
+                    templateFile.Close()
+                    return nil, fmt.Errorf("failed to create sheet for week %d: %v", i+1, err)
+                }
+                
+                // Now we need to copy ALL the content from the template
+                // This is complex - we need to copy cells, styles, merged cells, etc.
+                // Unfortunately, excelize doesn't have a built-in way to do this across files
+                
+                // Better approach: Use CopySheet on a pristine template within the same file
+                templateFile.Close()
+            }
+        }
+        
+        // Let's try a completely different approach:
+        // 1. Keep index 0 as pristine template with a temp name
+        // 2. Copy it for each week
+        // 3. Delete the pristine template at the end
+        
+        // Rename original to temp name
+        file.SetSheetName(originalTemplateName, "TEMPLATE_PRISTINE")
         
         // Process each week
         for i, weekData := range req.Weeks {
-            var currentSheetName string
-            
-            if i == 0 {
-                // Use the template sheet for Week 1, rename it
-                file.SetSheetName(originalTemplateName, weekData.WeekLabel)
-                currentSheetName = weekData.WeekLabel
-                log.Printf("📝 Renamed template sheet to: %s", currentSheetName)
-            } else {
-                // For subsequent weeks, copy from the RENAMED first sheet (index 0)
-                // Copy sheet at index 0 (the first week, which has the template structure)
-                newSheetIndex, err := file.NewSheet(weekData.WeekLabel)
-                if err != nil {
-                    return nil, fmt.Errorf("failed to create sheet %s: %v", weekData.WeekLabel, err)
-                }
-                
-                // Now copy the content from sheet 0 to the new sheet
-                // We need to copy it manually to avoid style corruption
-                sourceSheetName := file.GetSheetName(0)
-                
-                // Get all rows from the source sheet
-                rows, err := file.GetRows(sourceSheetName)
-                if err != nil {
-                    return nil, fmt.Errorf("failed to get rows from source: %v", err)
-                }
-                
-                // Copy all cell values
-                for rowIdx, row := range rows {
-                    for colIdx, cellValue := range row {
-                        cellName, _ := excelize.CoordinatesToCellName(colIdx+1, rowIdx+1)
-                        file.SetCellValue(weekData.WeekLabel, cellName, cellValue)
-                    }
-                }
-                
-                // Copy merged cells
-                mergedCells, err := file.GetMergeCells(sourceSheetName)
-                if err == nil {
-                    for _, mc := range mergedCells {
-                        file.MergeCell(weekData.WeekLabel, mc.GetStartAxis(), mc.GetEndAxis())
-                    }
-                }
-                
-                // Copy column widths
-                for col := 1; col <= 40; col++ {
-                    colName, _ := excelize.ColumnNumberToName(col)
-                    width, err := file.GetColWidth(sourceSheetName, colName)
-                    if err == nil && width > 0 {
-                        file.SetColWidth(weekData.WeekLabel, colName, colName, width)
-                    }
-                }
-                
-                // Copy row heights
-                for row := 1; row <= 30; row++ {
-                    height, err := file.GetRowHeight(sourceSheetName, row)
-                    if err == nil && height > 0 {
-                        file.SetRowHeight(weekData.WeekLabel, row, height)
-                    }
-                }
-                
-                file.SetActiveSheet(newSheetIndex)
-                currentSheetName = weekData.WeekLabel
-                log.Printf("📝 Created and populated new sheet: %s", currentSheetName)
+            // Copy from index 0 (the pristine template)
+            newSheetIndex, err := file.CopySheet(0, 0)
+            if err != nil {
+                return nil, fmt.Errorf("failed to copy template sheet for week %d: %v", i+1, err)
             }
-
-            // Populate the sheet with this week's data
+            
+            // Get the name of the newly copied sheet
+            copiedSheetName := file.GetSheetName(newSheetIndex)
+            
+            // Rename it to the week label
+            if err := file.SetSheetName(copiedSheetName, weekData.WeekLabel); err != nil {
+                return nil, fmt.Errorf("failed to rename sheet to %s: %v", weekData.WeekLabel, err)
+            }
+            
+            currentSheetName := weekData.WeekLabel
+            log.Printf("📝 Created sheet: %s (index %d)", currentSheetName, newSheetIndex)
+            
+            // Populate this week's data
             if err := populateTimecardSheet(file, currentSheetName, req, weekData.Entries, weekData.WeekLabel, weekData.WeekNumber); err != nil {
                 return nil, fmt.Errorf("failed to populate sheet %s: %v", currentSheetName, err)
             }
         }
+        
+        // Delete the pristine template sheet
+        if err := file.DeleteSheet("TEMPLATE_PRISTINE"); err != nil {
+            log.Printf("⚠️ Failed to delete pristine template: %v", err)
+        }
 
         // Set the first week as active
         file.SetActiveSheet(0)
-    } else {
+    } else{
         // Single week: use the template's existing sheet
         log.Printf("📊 Processing single-week timecard")
         templateSheetName := file.GetSheetName(0)
