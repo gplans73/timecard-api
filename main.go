@@ -1,21 +1,23 @@
 package main
 
 import (
-	"archive/zip"
-	"bytes"
-	"encoding/json"
-	"fmt"
-	"io"
-	"log"
-	"net/http"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"strconv"
-	"strings"
-	"time"
+    "archive/zip"
+    "bytes"
+    "encoding/base64"
+    "encoding/json"
+    "fmt"
+    "io"
+    "log"
+    "net/http"
+    "net/smtp"
+    "os"
+    "os/exec"
+    "path/filepath"
+    "strconv"
+    "strings"
+    "time"
 
-	"github.com/xuri/excelize/v2"
+    "github.com/xuri/excelize/v2"
 )
 
 // ====== Data Types ======
