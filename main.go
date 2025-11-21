@@ -201,6 +201,12 @@ func (gc *GraphConfig) convertExcelToPDFGraph(excelPath, pdfPath string) error {
 
     if uploadResp.StatusCode != http.StatusOK && uploadResp.StatusCode != http.StatusCreated {
         body, _ := io.ReadAll(uploadResp.Body)
+        
+        // Provide helpful error message for common issues
+        if uploadResp.StatusCode == 503 {
+            return fmt.Errorf("OneDrive service unavailable (HTTP 503). This usually means OneDrive is not provisioned for user %s. Please have the user log in to https://onedrive.live.com once to enable OneDrive", gc.UserID)
+        }
+        
         return fmt.Errorf("file upload failed with status %d: %s", uploadResp.StatusCode, string(body))
     }
 
@@ -289,13 +295,20 @@ func respondError(w http.ResponseWriter, err error) {
 func convertExcelToPDF(excelPath, pdfPath string) error {
     log.Printf("🖨️  Converting Excel to PDF: %s -> %s", excelPath, pdfPath)
 
+    var graphError error
+
     // Try Microsoft Graph API first if configured
     if graphClient != nil {
+        log.Printf("🔄 Attempting conversion via Microsoft Graph API...")
         err := graphClient.convertExcelToPDFGraph(excelPath, pdfPath)
         if err == nil {
             return nil
         }
-        log.Printf("⚠️  Microsoft Graph conversion failed: %v, falling back to LibreOffice", err)
+        graphError = err
+        log.Printf("⚠️  Microsoft Graph conversion failed: %v", err)
+        log.Printf("🔄 Falling back to LibreOffice...")
+    } else {
+        log.Printf("ℹ️  Microsoft Graph API not configured, using LibreOffice")
     }
 
     // Fallback to LibreOffice
@@ -310,10 +323,16 @@ func convertExcelToPDF(excelPath, pdfPath string) error {
     cmd.Stderr = os.Stderr
 
     if err := cmd.Run(); err != nil {
-        return fmt.Errorf("LibreOffice conversion failed: %v", err)
+        libreOfficeError := fmt.Errorf("LibreOffice conversion failed: %v", err)
+        
+        if graphError != nil {
+            return fmt.Errorf("PDF conversion failed: Graph API error (%v), LibreOffice error (%v). Please install LibreOffice or fix OneDrive access", graphError, libreOfficeError)
+        }
+        
+        return fmt.Errorf("%v. Please install LibreOffice: https://www.libreoffice.org/download/", libreOfficeError)
     }
 
-    log.Printf("✅ PDF generated at: %s", pdfPath)
+    log.Printf("✅ PDF generated using LibreOffice at: %s", pdfPath)
     return nil
 }
 
