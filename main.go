@@ -16,6 +16,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"mime/multipart"
 	"net/http"
@@ -178,7 +179,11 @@ func generateTimecardHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Create XLSX file using excelize
 	file := excelize.NewFile()
-	index := file.NewSheet("Sheet1")
+	index, err := file.NewSheet("Sheet1")
+	if err != nil {
+		respondErr(w, err)
+		return
+	}
 	file.SetCellValue("Sheet1", "A1", "Employee Name")
 	file.SetCellValue("Sheet1", "B1", req.EmployeeName)
 	file.SetCellValue("Sheet1", "A2", "Pay Period")
@@ -315,7 +320,7 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 		log.Printf("LibreOffice health check failed: %v, stderr: %s", err, stderr.String())
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusServiceUnavailable)
-		w.Write([]byte(fmt.Sprintf(`{"gotenberg":"%s","libreoffice_version":"%s","status":"libreoffice not available","error":"%s"}`, gotenbergStatus, "", err.Error())))
+		w.Write([]byte(fmt.Sprintf(`{"gotenberg":"%s","libreoffice_version":"%s","status":"libreoffice not available","error":"%s","gotenberg_error":"%s"}`, gotenbergStatus, "", err.Error(), gotenbergErr)))
 		return
 	}
 
@@ -323,7 +328,7 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 	log.Printf("LibreOffice health check passed: %s", version)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(fmt.Sprintf(`{"gotenberg":"%s","libreoffice_version":"%s","status":"ok"}`, gotenbergStatus, version)))
+	w.Write([]byte(fmt.Sprintf(`{"gotenberg":"%s","libreoffice_version":"%s","status":"ok","gotenberg_error":"%s"}`, gotenbergStatus, version, gotenbergErr)))
 }
 
 func main() {
