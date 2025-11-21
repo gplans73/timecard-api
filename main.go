@@ -1,724 +1,762 @@
 package main
 
 import (
-	"archive/zip"
-	"encoding/base64"
-	"encoding/json"
-	"fmt"
-	"io"
-	"log"
-	"net/http"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"strconv"
-	"strings"
-	"time"
+    "bytes"
+    "encoding/base64"
+    "encoding/json"
+    "fmt"
+    "log"
+    "net/http"
+    "net/smtp"
+    "os"
+    "strings"
+    "time"
 
-	"github.com/xuri/excelize/v2"
+    "github.com/xuri/excelize/v2"
 )
 
-func main() {
-	// Check for template file on startup
-	if _, err := os.Stat("template.xlsx"); err != nil {
-		log.Fatal("❌ template.xlsx not found! Make sure it's in the same directory as the executable.")
-	}
-	log.Println("✅ template.xlsx found")
-
-	// Test LibreOffice on startup
-	log.Println("🔍 Checking LibreOffice installation...")
-	cmd := exec.Command("libreoffice", "--version")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		log.Printf("⚠️ LibreOffice check failed: %v, output: %s", err, string(output))
-		log.Println("⚠️ PDF generation will be disabled")
-	} else {
-		log.Printf("✅ LibreOffice available: %s", strings.TrimSpace(string(output)))
-	}
-
-	// Check SendGrid configuration
-	if os.Getenv("SMTP_PASS") != "" && os.Getenv("SMTP_FROM") != "" {
-		log.Printf("✅ SendGrid configured: from=%s", os.Getenv("SMTP_FROM"))
-	} else {
-		log.Printf("⚠️ SendGrid not configured (SMTP_PASS or SMTP_FROM missing)")
-	}
-
-	// Health check endpoint
-	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
-	})
-
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"status":  "ok",
-			"message": "Timecard API is running",
-			"version": "2.5.0",
-			"endpoints": []string{
-				"/api/generate-timecard",
-				"/api/email-timecard",
-				"/test/libreoffice",
-				"/health",
-			},
-		})
-	})
-
-	http.HandleFunc("/api/generate-timecard", generateTimecardHandler)
-	http.HandleFunc("/api/email-timecard", emailTimecardHandler)
-	http.HandleFunc("/test/libreoffice", testLibreOfficeHandler)
-
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
-
-	log.Printf("🚀 Server starting on port %s", port)
-	if err := http.ListenAndServe(":"+port, nil); err != nil {
-		log.Fatalf("❌ Server failed: %v", err)
-	}
-}
-
+// TimecardRequest matches the Swift GoTimecardRequest structure
 type TimecardRequest struct {
-	EmployeeName    string     `json:"employee_name"`
-	PayPeriodNum    int        `json:"pay_period_num"`
-	Year            int        `json:"year"`
-	WeekStartDate   string     `json:"week_start_date"`
-	WeekNumberLabel string     `json:"week_number_label"`
-	Jobs            []Job      `json:"jobs"`
-	Entries         []Entry    `json:"entries"`
-	Weeks           []WeekData `json:"weeks"`
-	IncludePDF      bool       `json:"include_pdf"`
-}
-
-type EmailTimecardRequest struct {
-	TimecardRequest
-	To      string `json:"to"`
-	CC      string `json:"cc"`
-	Subject string `json:"subject"`
-	Body    string `json:"body"`
+    EmployeeName     string      `json:"employee_name"`
+    PayPeriodNum     int         `json:"pay_period_num"`
+    Year             int         `json:"year"`
+    WeekStartDate    string      `json:"week_start_date"`
+    WeekNumberLabel  string      `json:"week_number_label"`
+    Jobs             []Job       `json:"jobs"`
+    Entries          []Entry     `json:"entries"`
+    Weeks            []WeekData  `json:"weeks,omitempty"`
 }
 
 type Job struct {
-	JobCode string `json:"job_code"`
-	JobName string `json:"job_name"`
+    JobCode string `json:"job_code"`
+    JobName string `json:"job_name"`
 }
 
 type Entry struct {
-	Date     string  `json:"date"`
-	JobCode  string  `json:"job_code"`
-	Hours    float64 `json:"hours"`
-	Overtime bool    `json:"overtime"`
+    Date        string  `json:"date"`
+    JobCode     string  `json:"job_code"`
+    Hours       float64 `json:"hours"`
+    Overtime    bool    `json:"overtime"`
+    IsNightShift bool   `json:"is_night_shift"`
 }
 
 type WeekData struct {
-	WeekNumber    int     `json:"week_number"`
-	WeekStartDate string  `json:"week_start_date"`
-	WeekLabel     string  `json:"week_label"`
-	Entries       []Entry `json:"entries"`
+    WeekNumber    int     `json:"week_number"`
+    WeekStartDate string  `json:"week_start_date"`
+    WeekLabel     string  `json:"week_label"`
+    Entries       []Entry `json:"entries"`
+}
+
+// EmailTimecardRequest for email endpoint
+type EmailTimecardRequest struct {
+    TimecardRequest
+    To      string  `json:"to"`
+    CC      *string `json:"cc"`
+    Subject string  `json:"subject"`
+    Body    string  `json:"body"`
+}
+
+func main() {
+    port := os.Getenv("PORT")
+    if port == "" {
+        port = "8080"
+    }
+
+    // Health check endpoint
+    http.HandleFunc("/health", healthHandler)
+
+    // API endpoints
+    http.HandleFunc("/api/generate-timecard", corsMiddleware(generateTimecardHandler))
+    http.HandleFunc("/api/email-timecard", corsMiddleware(emailTimecardHandler))
+
+    log.Printf("Server starting on port %s", port)
+    if err := http.ListenAndServe(":"+port, nil); err != nil {
+        log.Fatal(err)
+    }
+}
+
+func healthHandler(w http.ResponseWriter, r *http.Request) {
+    w.WriteHeader(http.StatusOK)
+    w.Write([]byte("OK"))
+}
+
+func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
+    return func(w http.ResponseWriter, r *http.Request) {
+        w.Header().Set("Access-Control-Allow-Origin", "*")
+        w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
+        w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+        if r.Method == "OPTIONS" {
+            w.WriteHeader(http.StatusOK)
+            return
+        }
+
+        next(w, r)
+    }
 }
 
 func generateTimecardHandler(w http.ResponseWriter, r *http.Request) {
-	log.Printf("📥 Received request to %s", r.URL.Path)
+    if r.Method != http.MethodPost {
+        http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+        return
+    }
 
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
+    var req TimecardRequest
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        log.Printf("Error decoding request: %v", err)
+        http.Error(w, fmt.Sprintf("Invalid request: %v", err), http.StatusBadRequest)
+        return
+    }
 
-	var req TimecardRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		log.Printf("❌ Failed to decode request: %v", err)
-		respondError(w, err)
-		return
-	}
+    log.Printf("Generating timecard for %s", req.EmployeeName)
 
-	log.Printf("📥 Generating timecard for %s (IncludePDF: %v)", req.EmployeeName, req.IncludePDF)
+    // Generate Excel file
+    excelData, err := generateExcelFile(req)
+    if err != nil {
+        log.Printf("Error generating Excel: %v", err)
+        http.Error(w, fmt.Sprintf("Error generating timecard: %v", err), http.StatusInternalServerError)
+        return
+    }
 
-	// Create xlsx file from template
-	file, err := createXLSXFile(req)
-	if err != nil {
-		log.Printf("❌ Failed to create Excel: %v", err)
-		respondError(w, err)
-		return
-	}
-	defer file.Close()
+    // Send Excel file
+    w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"timecard_%s.xlsx\"", req.EmployeeName))
+    w.WriteHeader(http.StatusOK)
+    w.Write(excelData)
 
-	// Create temp directory
-	tempDir, err := os.MkdirTemp("", "timecard-*")
-	if err != nil {
-		log.Printf("❌ Failed to create temp dir: %v", err)
-		respondError(w, err)
-		return
-	}
-	defer os.RemoveAll(tempDir)
-
-	// Save Excel file
-	excelFilename := fmt.Sprintf("Timecard_%s_%d(%d).xlsx", req.EmployeeName, req.Year, req.PayPeriodNum)
-	excelPath := filepath.Join(tempDir, excelFilename)
-
-	if err := file.SaveAs(excelPath); err != nil {
-		log.Printf("❌ Failed to save Excel: %v", err)
-		respondError(w, err)
-		return
-	}
-
-	log.Printf("✅ Excel file created: %s", excelPath)
-
-	// Generate PDF if requested
-	var pdfPath string
-	if req.IncludePDF {
-		pdfFilename := fmt.Sprintf("Timecard_%s_%d(%d).pdf", req.EmployeeName, req.Year, req.PayPeriodNum)
-		pdfPath = filepath.Join(tempDir, pdfFilename)
-
-		log.Printf("🔄 Converting Excel to PDF...")
-		if err := convertExcelToPDF(excelPath, pdfPath); err != nil {
-			log.Printf("⚠️ PDF conversion failed: %v", err)
-			pdfPath = ""
-		} else {
-			log.Printf("✅ PDF file created: %s", pdfPath)
-		}
-	}
-
-	// If PDF was generated, return ZIP with both files
-	if pdfPath != "" && fileExists(pdfPath) {
-		log.Printf("📦 Creating ZIP archive with Excel and PDF")
-		zipBuffer := new(bytes.Buffer)
-		zipWriter := zip.NewWriter(zipBuffer)
-
-		if err := addFileToZip(zipWriter, excelPath, excelFilename); err != nil {
-			log.Printf("❌ Failed to add Excel to ZIP: %v", err)
-			respondError(w, err)
-			return
-		}
-
-		pdfFilename := filepath.Base(pdfPath)
-		if err := addFileToZip(zipWriter, pdfPath, pdfFilename); err != nil {
-			log.Printf("❌ Failed to add PDF to ZIP: %v", err)
-			respondError(w, err)
-			return
-		}
-
-		zipWriter.Close()
-
-		w.Header().Set("Content-Type", "application/zip")
-		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"timecard_%s_%d(%d).zip\"", req.EmployeeName, req.Year, req.PayPeriodNum))
-		w.Write(zipBuffer.Bytes())
-		log.Printf("✅ Sent ZIP file: %d bytes", zipBuffer.Len())
-	} else {
-		// Return just Excel
-		excelData, err := os.ReadFile(excelPath)
-		if err != nil {
-			log.Printf("❌ Failed to read Excel: %v", err)
-			respondError(w, err)
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", excelFilename))
-		w.Write(excelData)
-		log.Printf("✅ Sent Excel file: %d bytes", len(excelData))
-	}
+    log.Printf("Successfully generated timecard (%d bytes)", len(excelData))
 }
 
 func emailTimecardHandler(w http.ResponseWriter, r *http.Request) {
-	log.Printf("📥 Received email request to %s", r.URL.Path)
+    if r.Method != http.MethodPost {
+        http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+        return
+    }
 
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
+    var req EmailTimecardRequest
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        log.Printf("Error decoding request: %v", err)
+        http.Error(w, fmt.Sprintf("Invalid request: %v", err), http.StatusBadRequest)
+        return
+    }
 
-	var req EmailTimecardRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		log.Printf("❌ Failed to decode email request: %v", err)
-		respondError(w, err)
-		return
-	}
+    log.Printf("Emailing timecard for %s to %s", req.EmployeeName, req.To)
 
-	// Check SendGrid API key
-	sendgridAPIKey := os.Getenv("SMTP_PASS")
-	smtpFrom := os.Getenv("SMTP_FROM")
+    // Generate Excel file
+    excelData, err := generateExcelFile(req.TimecardRequest)
+    if err != nil {
+        log.Printf("Error generating Excel: %v", err)
+        http.Error(w, fmt.Sprintf("Error generating timecard: %v", err), http.StatusInternalServerError)
+        return
+    }
 
-	if sendgridAPIKey == "" || smtpFrom == "" {
-		log.Printf("⚠️ SendGrid not configured")
-		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{
-			"status":  "error",
-			"message": "SendGrid not configured on server (SMTP_PASS or SMTP_FROM missing)",
-		})
-		return
-	}
+    log.Printf("Generated Excel file (%d bytes) for email attachment", len(excelData))
 
-	log.Printf("📧 Sending email from %s to %s via SendGrid", smtpFrom, req.To)
+    // Send email via SMTP
+    err = sendEmail(req.To, req.CC, req.Subject, req.Body, excelData, req.EmployeeName)
+    if err != nil {
+        log.Printf("Error sending email: %v", err)
+        http.Error(w, fmt.Sprintf("Error sending email: %v", err), http.StatusInternalServerError)
+        return
+    }
 
-	// Generate Excel file from template
-	file, err := createXLSXFile(req.TimecardRequest)
-	if err != nil {
-		respondError(w, err)
-		return
-	}
-	defer file.Close()
+    response := map[string]string{
+        "status":  "success",
+        "message": fmt.Sprintf("Email sent to %s", req.To),
+    }
 
-	// Create temp directory
-	tempDir, err := os.MkdirTemp("", "timecard-*")
-	if err != nil {
-		respondError(w, err)
-		return
-	}
-	defer os.RemoveAll(tempDir)
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(response)
 
-	// Save Excel
-	excelFilename := fmt.Sprintf("Timecard_%s_%d(%d).xlsx", req.EmployeeName, req.Year, req.PayPeriodNum)
-	excelPath := filepath.Join(tempDir, excelFilename)
-	if err := file.SaveAs(excelPath); err != nil {
-		respondError(w, err)
-		return
-	}
-
-	log.Printf("✅ Excel file created for email: %s", excelPath)
-
-	// Generate PDF if requested
-	var pdfPath string
-	if req.IncludePDF {
-		pdfFilename := fmt.Sprintf("Timecard_%s_%d(%d).pdf", req.EmployeeName, req.Year, req.PayPeriodNum)
-		pdfPath = filepath.Join(tempDir, pdfFilename)
-
-		log.Printf("🔄 Converting Excel to PDF for email...")
-		if err := convertExcelToPDF(excelPath, pdfPath); err != nil {
-			log.Printf("⚠️ PDF generation failed: %v", err)
-			pdfPath = ""
-		} else {
-			log.Printf("✅ PDF file created for email: %s", pdfPath)
-		}
-	}
-
-	// Send email via SendGrid HTTP API
-	if err := sendEmailViaSendGrid(sendgridAPIKey, smtpFrom, req.To, req.CC, req.Subject, req.Body, excelPath, pdfPath); err != nil {
-		log.Printf("❌ Failed to send email: %v", err)
-		respondError(w, err)
-		return
-	}
-
-	log.Printf("✅ Email sent successfully to %s", req.To)
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{
-		"status":  "success",
-		"message": "Email sent successfully",
-	})
+    log.Printf("Email sent successfully to %s", req.To)
 }
 
-func testLibreOfficeHandler(w http.ResponseWriter, r *http.Request) {
-	log.Printf("🔍 Testing LibreOffice installation")
-	cmd := exec.Command("libreoffice", "--version")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		log.Printf("❌ LibreOffice test failed: %v", err)
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte(fmt.Sprintf("❌ Error: %v\nOutput: %s", err, string(output))))
-		return
-	}
-	log.Printf("✅ LibreOffice test passed")
-	w.Write([]byte(fmt.Sprintf("✅ LibreOffice installed:\n%s", string(output))))
+func generateExcelFile(req TimecardRequest) ([]byte, error) {
+    // Open template file
+    templatePath := "template.xlsx"
+    f, err := excelize.OpenFile(templatePath)
+    if err != nil {
+        log.Printf("Warning: Template not found, creating basic file: %v", err)
+        // If template doesn't exist, create a basic file
+        return generateBasicExcelFile(req)
+    }
+    defer f.Close()
+
+    // Normalize: if Weeks is empty but top-level Entries provided, partition them into Week 1 and Week 2
+    if len(req.Weeks) == 0 && len(req.Entries) > 0 {
+        // Parse overall week start; if missing or invalid, infer from earliest entry date (start of its week)
+        var week1Start time.Time
+        var parseErr error
+        if req.WeekStartDate != "" {
+            week1Start, parseErr = time.Parse(time.RFC3339, req.WeekStartDate)
+        }
+        if parseErr != nil || req.WeekStartDate == "" {
+            // find earliest entry date
+            earliest := time.Now().UTC()
+            for _, e := range req.Entries {
+                if t, err := time.Parse(time.RFC3339, e.Date); err == nil {
+                    if t.Before(earliest) {
+                        earliest = t
+                    }
+                }
+            }
+            // normalize to Sunday start of that week (Excel template assumes Sun-Sat)
+            wd := int(earliest.Weekday()) // 0=Sun
+            week1Start = time.Date(earliest.Year(), earliest.Month(), earliest.Day()-wd, 0, 0, 0, 0, time.UTC)
+        }
+        week2Start := week1Start.AddDate(0, 0, 7)
+
+        w1 := WeekData{WeekNumber: 1, WeekStartDate: week1Start.Format(time.RFC3339), WeekLabel: "Week 1"}
+        w2 := WeekData{WeekNumber: 2, WeekStartDate: week2Start.Format(time.RFC3339), WeekLabel: "Week 2"}
+
+        for _, e := range req.Entries {
+            t, err := time.Parse(time.RFC3339, e.Date)
+            if err != nil {
+                continue
+            }
+            if !t.Before(week2Start) {
+                w2.Entries = append(w2.Entries, e)
+            } else {
+                w1.Entries = append(w1.Entries, e)
+            }
+        }
+        // Only include weeks that actually have entries
+        if len(w1.Entries) > 0 {
+            req.Weeks = append(req.Weeks, w1)
+        }
+        if len(w2.Entries) > 0 {
+            req.Weeks = append(req.Weeks, w2)
+        }
+    }
+
+    // Get the first sheet (Week 1)
+    sheets := f.GetSheetList()
+    if len(sheets) == 0 {
+        return nil, fmt.Errorf("no sheets found in template")
+    }
+
+    // Process Week 1 data
+    if len(req.Weeks) > 0 {
+        weekData := req.Weeks[0]
+        err = fillWeekSheet(f, sheets[0], req, weekData, 1)
+        if err != nil {
+            log.Printf("Error filling Week 1: %v", err)
+        }
+    }
+
+    // Process Week 2 data if available
+    if len(sheets) > 1 && len(req.Weeks) > 1 {
+        weekData := req.Weeks[1]
+        err = fillWeekSheet(f, sheets[1], req, weekData, 2)
+        if err != nil {
+            log.Printf("Error filling Week 2: %v", err)
+        }
+    }
+
+    // Force Excel to recalculate all formulas when the file is opened
+    // Note: The formulas in the template will recalculate automatically when Excel opens the file
+    // We just need to make sure we're not overwriting them with static values
+
+    // Write to buffer
+    buffer, err := f.WriteToBuffer()
+    if err != nil {
+        return nil, err
+    }
+
+    return buffer.Bytes(), nil
 }
 
-func convertExcelToPDF(excelPath, pdfPath string) error {
-	outputDir := filepath.Dir(pdfPath)
+// fillWeekSheet fills a single week sheet with data
+func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, weekData WeekData, weekNum int) error {
+    // Parse week start date
+    weekStart, err := time.Parse(time.RFC3339, weekData.WeekStartDate)
+    if err != nil {
+        return fmt.Errorf("error parsing week start date: %v", err)
+    }
 
-	cmd := exec.Command("libreoffice",
-		"--headless",
-		"--convert-to", "pdf",
-		"--outdir", outputDir,
-		excelPath)
+    log.Printf("=== Filling %s ===", sheetName)
+    log.Printf("Week start: %s, Entries: %d", weekStart.Format("2006-01-02"), len(weekData.Entries))
 
-	log.Printf("🔧 Running: %s", cmd.String())
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("LibreOffice conversion failed: %v, output: %s", err, string(output))
-	}
+    // Fill header information
+    f.SetCellValue(sheetName, "M2", req.EmployeeName)
+    f.SetCellValue(sheetName, "AJ2", req.PayPeriodNum)
+    f.SetCellValue(sheetName, "AJ3", req.Year)
 
-	log.Printf("✅ LibreOffice output: %s", string(output))
+    // Set week start date as Excel date serial
+    excelDate := timeToExcelDate(weekStart)
+    f.SetCellValue(sheetName, "B4", excelDate)
 
-	baseName := strings.TrimSuffix(filepath.Base(excelPath), filepath.Ext(excelPath))
-	generatedPDF := filepath.Join(outputDir, baseName+".pdf")
+    // Set week number label
+    f.SetCellValue(sheetName, "AJ4", weekData.WeekLabel)
 
-	if generatedPDF != pdfPath {
-		if err := os.Rename(generatedPDF, pdfPath); err != nil {
-			return fmt.Errorf("failed to rename PDF: %v", err)
-		}
-	}
+    // CRITICAL: CODE columns (C,E,G,I,K...) for job CODES and HOURS
+    //           JOB columns (D,F,H,J,L...) for job NAMES/NUMBERS
+    codeColumns := []string{"C", "E", "G", "I", "K", "M", "O", "Q", "S", "U", "W", "Y", "AA", "AC", "AE", "AG"}
+    jobColumns := []string{"D", "F", "H", "J", "L", "N", "P", "R", "T", "V", "X", "Z", "AB", "AD", "AF", "AH"}
 
-	return nil
+    // Build maps for job lookup by NUMBER (JobCode) and by CODE (JobName)
+    jobByNumber := make(map[string]*Job)
+    jobByCode := make(map[string]*Job)
+    for i := range req.Jobs {
+        j := &req.Jobs[i]
+        if j.JobCode != "" {
+            jobByNumber[j.JobCode] = j
+        }
+        if j.JobName != "" {
+            jobByCode[j.JobName] = j
+        }
+        log.Printf("Adding job: number='%s', code='%s'", j.JobCode, j.JobName)
+    }
+
+    // Get separate job code lists for regular time and overtime
+    regularJobCodes := getUniqueJobCodesForType(weekData.Entries, false) // regular time only
+    overtimeJobCodes := getUniqueJobCodesForType(weekData.Entries, true) // overtime only
+
+    log.Printf("Regular job codes: %v", regularJobCodes)
+    log.Printf("Overtime job codes: %v", overtimeJobCodes)
+
+    // Fill REGULAR TIME headers (Row 4) - only if there are regular jobs
+    if len(regularJobCodes) > 0 {
+        // Clear placeholder text from regular job columns that will be used
+        for i := 0; i < len(regularJobCodes) && i < len(codeColumns); i++ {
+            f.SetCellValue(sheetName, codeColumns[i]+"4", "")
+            f.SetCellValue(sheetName, jobColumns[i]+"4", "")
+        }
+
+        // Fill regular job headers (Row 4)
+        for i, jobNumberKey := range regularJobCodes {
+            if i >= len(codeColumns) {
+                log.Printf("Warning: More than %d regular jobs, truncating", len(codeColumns))
+                break
+            }
+
+            // Remove "N-" prefix from night shift entries to look up the job
+            actualJobNumber := jobNumberKey
+            isNightShift := strings.HasPrefix(jobNumberKey, "N-")
+            if isNightShift {
+                actualJobNumber = strings.TrimPrefix(jobNumberKey, "N-")
+            }
+
+            var job *Job
+            // First assume actualJobNumber is a NUMBER
+            if j, ok := jobByNumber[actualJobNumber]; ok {
+                job = j
+            } else if j, ok := jobByCode[actualJobNumber]; ok {
+                // If it's actually a CODE, use that and normalize the number from the job
+                job = j
+                actualJobNumber = j.JobCode
+            }
+
+            if job != nil {
+                // Write the CODE (from JobName) to CODE column
+                // Add "N" prefix to the CODE if it was a night shift
+                codeCellRef := codeColumns[i] + "4"
+                codeToWrite := job.JobName // e.g., "201"
+                if isNightShift {
+                    codeToWrite = "N" + job.JobName // e.g., "N201"
+                }
+                f.SetCellValue(sheetName, codeCellRef, codeToWrite)
+                writtenValue, _ := f.GetCellValue(sheetName, codeCellRef)
+                log.Printf("  Wrote code to %s: '%s', verified: '%s'", codeCellRef, codeToWrite, writtenValue)
+
+                // Write the NUMBER (from JobCode) to JOB column (no "N" prefix on number)
+                jobCellRef := jobColumns[i] + "4"
+                f.SetCellValue(sheetName, jobCellRef, job.JobCode)
+                writtenJobValue, _ := f.GetCellValue(sheetName, jobCellRef)
+                log.Printf("  Wrote job# to %s: '%s', verified: '%s'", jobCellRef, job.JobCode, writtenJobValue)
+            } else {
+                log.Printf("  WARNING: Could not resolve job '%s' (by number or code)", actualJobNumber)
+                // Can't find the job - write the job number to CODE column with "N" prefix if night shift
+                codeToWrite := actualJobNumber
+                if isNightShift {
+                    codeToWrite = "N" + actualJobNumber
+                }
+                f.SetCellValue(sheetName, codeColumns[i]+"4", codeToWrite)
+            }
+        }
+    }
+
+    // Fill OVERTIME headers (Row 15) - only if there are overtime jobs
+    if len(overtimeJobCodes) > 0 {
+        // Clear placeholder text from overtime job columns that will be used
+        for i := 0; i < len(overtimeJobCodes) && i < len(codeColumns); i++ {
+            f.SetCellValue(sheetName, codeColumns[i]+"15", "")
+            f.SetCellValue(sheetName, jobColumns[i]+"15", "")
+        }
+
+        // Fill overtime job headers (Row 15)
+        for i, jobNumberKey := range overtimeJobCodes {
+            if i >= len(codeColumns) {
+                log.Printf("Warning: More than %d overtime jobs, truncating", len(codeColumns))
+                break
+            }
+
+            // Remove "N-" prefix from night shift entries to look up the job
+            actualJobNumber := jobNumberKey
+            isNightShift := strings.HasPrefix(jobNumberKey, "N-")
+            if isNightShift {
+                actualJobNumber = strings.TrimPrefix(jobNumberKey, "N-")
+            }
+
+            var job *Job
+            // First assume actualJobNumber is a NUMBER
+            if j, ok := jobByNumber[actualJobNumber]; ok {
+                job = j
+            } else if j, ok := jobByCode[actualJobNumber]; ok {
+                // If it's actually a CODE, use that and normalize the number from the job
+                job = j
+                actualJobNumber = j.JobCode
+            }
+
+            if job != nil {
+                // Write the CODE (from JobName) to CODE column
+                // Add "N" prefix to the CODE if it was a night shift
+                codeToWrite := job.JobName // e.g., "201"
+                if isNightShift {
+                    codeToWrite = "N" + job.JobName // e.g., "N201"
+                }
+                f.SetCellValue(sheetName, codeColumns[i]+"15", codeToWrite)
+                log.Printf("  Writing OT code to %s15: '%s'", codeColumns[i], codeToWrite)
+
+                // Write the NUMBER (from JobCode) to JOB column (no "N" prefix on number)
+                f.SetCellValue(sheetName, jobColumns[i]+"15", job.JobCode)
+                log.Printf("  Writing OT job# to %s15: '%s' (looked up by number '%s')", jobColumns[i], job.JobCode, actualJobNumber)
+            } else {
+                log.Printf("  WARNING: Could not resolve job '%s' (by number or code)", actualJobNumber)
+                // Can't find the job - write the job number to CODE column with "N" prefix if night shift
+                codeToWrite := actualJobNumber
+                if isNightShift {
+                    codeToWrite = "N" + actualJobNumber
+                }
+                f.SetCellValue(sheetName, codeColumns[i]+"15", codeToWrite)
+            }
+        }
+    }
+
+    // Create a map to organize entries by date and job
+    // Key format: "JobNumber" or "N-JobNumber" for night shifts
+    regularTimeEntries := make(map[string]map[string]float64) // date -> jobNumberKey -> hours
+    overtimeEntries := make(map[string]map[string]float64)    // date -> jobNumberKey -> hours
+
+    for _, entry := range weekData.Entries {
+        entryDate, err := time.Parse(time.RFC3339, entry.Date)
+        if err != nil {
+            log.Printf("Error parsing entry date: %v", err)
+            continue
+        }
+
+        dateKey := entryDate.Format("2006-01-02")
+
+        // Normalize: entry.JobCode may be a NUMBER or a CODE; translate to job NUMBER for keys
+        normalizedNumber := entry.JobCode
+        if _, ok := jobByNumber[normalizedNumber]; !ok {
+            if j, ok2 := jobByCode[normalizedNumber]; ok2 {
+                normalizedNumber = j.JobCode
+            }
+        }
+        jobNumberKey := normalizedNumber
+        if entry.IsNightShift {
+            jobNumberKey = "N-" + normalizedNumber
+        }
+
+        if entry.Overtime {
+            if overtimeEntries[dateKey] == nil {
+                overtimeEntries[dateKey] = make(map[string]float64)
+            }
+            overtimeEntries[dateKey][jobNumberKey] += entry.Hours
+            log.Printf("  OT entry: %s, Job %s, Hours %.1f", dateKey, jobNumberKey, entry.Hours)
+        } else {
+            if regularTimeEntries[dateKey] == nil {
+                regularTimeEntries[dateKey] = make(map[string]float64)
+            }
+            regularTimeEntries[dateKey][jobNumberKey] += entry.Hours
+            log.Printf("  REG entry: %s, Job %s, Hours %.1f", dateKey, jobNumberKey, entry.Hours)
+        }
+    }
+
+    // Fill date column and hours data
+    // Days: Sunday (row 5) through Saturday (row 11)
+    for dayOffset := 0; dayOffset < 7; dayOffset++ {
+        currentDate := weekStart.AddDate(0, 0, dayOffset)
+        dateKey := currentDate.Format("2006-01-02")
+        excelDateSerial := timeToExcelDate(currentDate)
+
+        regularRow := 5 + dayOffset
+        overtimeRow := 16 + dayOffset
+
+        // Set date in column B for both regular and overtime sections
+        f.SetCellValue(sheetName, fmt.Sprintf("B%d", regularRow), excelDateSerial)
+        f.SetCellValue(sheetName, fmt.Sprintf("B%d", overtimeRow), excelDateSerial)
+
+        // Fill regular time hours - WRITE TO CODE COLUMNS (C, E, G, I, K...)
+        if regularHours, exists := regularTimeEntries[dateKey]; exists {
+            for i, jobCode := range regularJobCodes {
+                if i >= len(codeColumns) {
+                    break
+                }
+                if hours, hasHours := regularHours[jobCode]; hasHours && hours > 0 {
+                    cellRef := fmt.Sprintf("%s%d", codeColumns[i], regularRow)
+                    f.SetCellValue(sheetName, cellRef, hours)
+                    log.Printf("    Writing REG: %s = %.1f (job %s)", cellRef, hours, jobCode)
+                }
+            }
+        }
+
+        // Fill overtime hours - WRITE TO CODE COLUMNS (C, E, G, I, K...)
+        if otHours, exists := overtimeEntries[dateKey]; exists {
+            for i, jobCode := range overtimeJobCodes {
+                if i >= len(codeColumns) {
+                    break
+                }
+                if hours, hasHours := otHours[jobCode]; hasHours && hours > 0 {
+                    cellRef := fmt.Sprintf("%s%d", codeColumns[i], overtimeRow)
+                    f.SetCellValue(sheetName, cellRef, hours)
+                    log.Printf("    Writing OT: %s = %.1f (job %s)", cellRef, hours, jobCode)
+                }
+            }
+        }
+    }
+
+    log.Printf("=== Week %d completed ===", weekNum)
+    return nil
 }
 
-func addFileToZip(zipWriter *zip.Writer, filePath, fileName string) error {
-	fileData, err := os.ReadFile(filePath)
-	if err != nil {
-		return err
-	}
+// getUniqueJobCodesForType returns unique job NUMBERS from entries filtered by overtime type
+// Night shift entries get "N-" prefixed to their job NUMBER
+// isOvertime = true: returns only overtime job numbers
+// isOvertime = false: returns only regular time job numbers
+func getUniqueJobCodesForType(entries []Entry, isOvertime bool) []string {
+    seen := make(map[string]bool)
+    var result []string
 
-	writer, err := zipWriter.Create(fileName)
-	if err != nil {
-		return err
-	}
+    for _, entry := range entries {
+        // Skip if not matching the type we want
+        if entry.Overtime != isOvertime {
+            continue
+        }
 
-	_, err = writer.Write(fileData)
-	return err
+        // Use the job NUMBER (from entry.JobCode)
+        jobNumberKey := entry.JobCode
+        // Prefix with "N-" if it's a night shift
+        if entry.IsNightShift {
+            jobNumberKey = "N-" + entry.JobCode
+        }
+
+        if !seen[jobNumberKey] {
+            seen[jobNumberKey] = true
+            result = append(result, jobNumberKey)
+        }
+    }
+
+    return result
 }
 
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
+// getMapKeys returns the keys of a Job map for debugging
+func getMapKeys(m map[string]*Job) []string {
+    keys := make([]string, 0, len(m))
+    for k := range m {
+        keys = append(keys, k)
+    }
+    return keys
 }
 
-func respondError(w http.ResponseWriter, err error) {
-	log.Printf("❌ Error: %v", err)
-	w.WriteHeader(http.StatusInternalServerError)
-	json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+// timeToExcelDate converts a Go time.Time to Excel date serial number
+// Excel's epoch is December 30, 1899
+func timeToExcelDate(t time.Time) float64 {
+    // Excel epoch: December 30, 1899
+    excelEpoch := time.Date(1899, 12, 30, 0, 0, 0, 0, time.UTC)
+    duration := t.Sub(excelEpoch)
+    days := duration.Hours() / 24.0
+    return days
 }
 
-func sendEmailViaSendGrid(apiKey, from, to, cc, subject, body, excelPath, pdfPath string) error {
-	log.Printf("📧 Using SendGrid HTTP API v3")
+// generateBasicExcelFile creates a basic Excel file when template is not available
+func generateBasicExcelFile(req TimecardRequest) ([]byte, error) {
+    f := excelize.NewFile()
+    defer f.Close()
 
-	// Read Excel attachment
-	excelData, err := os.ReadFile(excelPath)
-	if err != nil {
-		return fmt.Errorf("failed to read Excel file: %v", err)
-	}
+    sheet := "Sheet1"
+    f.SetCellValue(sheet, "A1", "Employee Name:")
+    f.SetCellValue(sheet, "B1", req.EmployeeName)
+    f.SetCellValue(sheet, "A2", "Pay Period:")
+    f.SetCellValue(sheet, "B2", req.PayPeriodNum)
+    f.SetCellValue(sheet, "A3", "Year:")
+    f.SetCellValue(sheet, "B3", req.Year)
+    f.SetCellValue(sheet, "A4", "Week:")
+    f.SetCellValue(sheet, "B4", req.WeekNumberLabel)
 
-	// Read PDF attachment if exists
-	var pdfData []byte
-	if pdfPath != "" && fileExists(pdfPath) {
-		pdfData, _ = os.ReadFile(pdfPath)
-	}
+    // Headers
+    f.SetCellValue(sheet, "A6", "Date")
+    f.SetCellValue(sheet, "B6", "Job Code")
+    f.SetCellValue(sheet, "C6", "Job Name")
+    f.SetCellValue(sheet, "D6", "Hours")
+    f.SetCellValue(sheet, "E6", "Overtime")
 
-	// Build SendGrid API request structure
-	type Attachment struct {
-		Content     string `json:"content"`
-		Type        string `json:"type"`
-		Filename    string `json:"filename"`
-		Disposition string `json:"disposition"`
-	}
+    // Create job lookup
+    jobMap := make(map[string]string)
+    for _, job := range req.Jobs {
+        jobMap[job.JobCode] = job.JobName
+    }
 
-	type Email struct {
-		Email string `json:"email"`
-	}
+    // Add entries
+    row := 7
+    totalHours := 0.0
+    totalOvertimeHours := 0.0
 
-	type Personalization struct {
-		To []Email `json:"to"`
-		Cc []Email `json:"cc,omitempty"`
-	}
+    for _, entry := range req.Entries {
+        // Parse date
+        t, err := time.Parse(time.RFC3339, entry.Date)
+        if err != nil {
+            log.Printf("Error parsing date: %v", err)
+            continue
+        }
 
-	type Content struct {
-		Type  string `json:"type"`
-		Value string `json:"value"`
-	}
+        f.SetCellValue(sheet, fmt.Sprintf("A%d", row), t.Format("2006-01-02"))
 
-	type SendGridRequest struct {
-		Personalizations []Personalization `json:"personalizations"`
-		From             Email             `json:"from"`
-		Subject          string            `json:"subject"`
-		Content          []Content         `json:"content"`
-		Attachments      []Attachment      `json:"attachments"`
-	}
+        // Prefix job code with "N" if night shift for output consistency
+        jobCodeToWrite := entry.JobCode
+        if entry.IsNightShift {
+            jobCodeToWrite = "N" + jobCodeToWrite
+        }
+        f.SetCellValue(sheet, fmt.Sprintf("B%d", row), jobCodeToWrite)
 
-	// Build the request
-	req := SendGridRequest{
-		Personalizations: []Personalization{
-			{
-				To: []Email{{Email: to}},
-			},
-		},
-		From:    Email{Email: from},
-		Subject: subject,
-		Content: []Content{
-			{
-				Type:  "text/plain",
-				Value: body,
-			},
-		},
-		Attachments: []Attachment{
-			{
-				Content:     base64.StdEncoding.EncodeToString(excelData),
-				Type:        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-				Filename:    filepath.Base(excelPath),
-				Disposition: "attachment",
-			},
-		},
-	}
+        f.SetCellValue(sheet, fmt.Sprintf("C%d", row), jobMap[entry.JobCode])
+        f.SetCellValue(sheet, fmt.Sprintf("D%d", row), entry.Hours)
 
-	// Add CC recipients if provided
-	if cc != "" {
-		ccAddresses := strings.Split(cc, ",")
-		for _, addr := range ccAddresses {
-			addr = strings.TrimSpace(addr)
-			if addr != "" {
-				req.Personalizations[0].Cc = append(req.Personalizations[0].Cc, Email{Email: addr})
-			}
-		}
-	}
+        overtimeStr := "No"
+        if entry.Overtime {
+            overtimeStr = "Yes"
+            totalOvertimeHours += entry.Hours
+        }
+        f.SetCellValue(sheet, fmt.Sprintf("E%d", row), overtimeStr)
 
-	// Add PDF attachment if exists
-	if len(pdfData) > 0 {
-		req.Attachments = append(req.Attachments, Attachment{
-			Content:     base64.StdEncoding.EncodeToString(pdfData),
-			Type:        "application/pdf",
-			Filename:    filepath.Base(pdfPath),
-			Disposition: "attachment",
-		})
-		log.Printf("📎 Added PDF attachment: %s (%d bytes)", filepath.Base(pdfPath), len(pdfData))
-	}
+        totalHours += entry.Hours
+        row++
+    }
 
-	// Encode to JSON
-	jsonData, err := json.Marshal(req)
-	if err != nil {
-		return fmt.Errorf("failed to encode JSON: %v", err)
-	}
+    // Add totals
+    row++
+    f.SetCellValue(sheet, fmt.Sprintf("A%d", row), "Total Hours:")
+    f.SetCellValue(sheet, fmt.Sprintf("D%d", row), totalHours)
+    row++
+    f.SetCellValue(sheet, fmt.Sprintf("A%d", row), "Total Overtime:")
+    f.SetCellValue(sheet, fmt.Sprintf("D%d", row), totalOvertimeHours)
 
-	// Send HTTP request to SendGrid API
-	httpReq, err := http.NewRequest("POST", "https://api.sendgrid.com/v3/mail/send", strings.NewReader(string(jsonData)))
-	if err != nil {
-		return fmt.Errorf("failed to create HTTP request: %v", err)
-	}
+    // Write to buffer
+    buffer, err := f.WriteToBuffer()
+    if err != nil {
+        return nil, err
+    }
 
-	httpReq.Header.Set("Authorization", "Bearer "+apiKey)
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(httpReq)
-	if err != nil {
-		return fmt.Errorf("HTTP request failed: %v", err)
-	}
-	defer resp.Body.Close()
-
-	// SendGrid returns 202 Accepted on success
-	if resp.StatusCode != 202 {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("SendGrid API error: %d - %s", resp.StatusCode, string(bodyBytes))
-	}
-
-	log.Printf("✅ Email sent via SendGrid (status: %d)", resp.StatusCode)
-	return nil
+    return buffer.Bytes(), nil
 }
 
-// createXLSXFile loads the template and populates it with timecard data
-func createXLSXFile(req TimecardRequest) (*excelize.File, error) {
-	log.Printf("📂 Loading template.xlsx...")
+// sendEmail sends an email with Excel attachment via SMTP
+func sendEmail(to string, cc *string, subject string, body string, attachment []byte, employeeName string) error {
+    // Get SMTP configuration from environment variables
+    smtpHost := os.Getenv("SMTP_HOST")
+    smtpPort := os.Getenv("SMTP_PORT")
+    smtpUser := os.Getenv("SMTP_USER")
+    smtpPass := os.Getenv("SMTP_PASS")
+    fromEmail := os.Getenv("SMTP_FROM")
 
-	// Load the template file
-	file, err := excelize.OpenFile("template.xlsx")
-	if err != nil {
-		return nil, fmt.Errorf("failed to load template: %v", err)
-	}
+    // Check if SMTP is configured
+    if smtpHost == "" || smtpPort == "" || smtpUser == "" || smtpPass == "" {
+        return fmt.Errorf("SMTP not configured - please set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS environment variables")
+    }
 
-	log.Printf("✅ Template loaded successfully")
+    if fromEmail == "" {
+        fromEmail = smtpUser // Use SMTP user as sender if FROM not specified
+    }
 
-	// Get the first sheet name from template
-	originalSheetName := file.GetSheetName(0)
-	log.Printf("🔍 Original template sheet name: %s", originalSheetName)
+    // Parse recipients
+    recipients := strings.Split(to, ",")
+    for i := range recipients {
+        recipients[i] = strings.TrimSpace(recipients[i])
+    }
 
-	// Check if multi-week data is provided
-	if req.Weeks != nil && len(req.Weeks) > 0 {
-		log.Printf("📊 Processing multi-week timecard (%d weeks)", len(req.Weeks))
+    var ccRecipients []string
+    if cc != nil && *cc != "" {
+        ccRecipients = strings.Split(*cc, ",")
+        for i := range ccRecipients {
+            ccRecipients[i] = strings.TrimSpace(ccRecipients[i])
+        }
+    }
 
-		// Delete all sheets except the first one
-		sheetList := file.GetSheetList()
-		for i := 1; i < len(sheetList); i++ {
-			if err := file.DeleteSheet(sheetList[i]); err != nil {
-				log.Printf("⚠️ Could not delete sheet %s: %v", sheetList[i], err)
-			}
-		}
+    // Combine all recipients for SMTP
+    allRecipients := append([]string{}, recipients...)
+    allRecipients = append(allRecipients, ccRecipients...)
 
-		// Process each week
-		for i, weekData := range req.Weeks {
-			var targetSheetName string
+    // Create email message with attachment
+    fileName := fmt.Sprintf("timecard_%s_%s.xlsx",
+        strings.ReplaceAll(employeeName, " ", "_"),
+        time.Now().Format("2006-01-02"))
 
-			if i == 0 {
-				// First week: rename the original sheet
-				targetSheetName = weekData.WeekLabel
-				if err := file.SetSheetName(originalSheetName, targetSheetName); err != nil {
-					return nil, fmt.Errorf("failed to rename first sheet to %s: %v", targetSheetName, err)
-				}
-				originalSheetName = targetSheetName
-				log.Printf("📝 Renamed original sheet to: %s", targetSheetName)
-			} else {
-				// Subsequent weeks: copy the first week sheet
-				targetSheetName = weekData.WeekLabel
-				newSheetIndex, err := file.NewSheet(targetSheetName)
-				if err != nil {
-					return nil, fmt.Errorf("failed to create sheet for week %d: %v", i+1, err)
-				}
+    message := buildEmailMessage(fromEmail, recipients, ccRecipients, subject, body, attachment, fileName)
 
-				if err := file.CopySheet(0, newSheetIndex); err != nil {
-					return nil, fmt.Errorf("failed to copy sheet for week %d: %v", i+1, err)
-				}
-				log.Printf("📝 Created and copied sheet: %s", targetSheetName)
-			}
+    // Connect to SMTP server
+    auth := smtp.PlainAuth("", smtpUser, smtpPass, smtpHost)
+    addr := fmt.Sprintf("%s:%s", smtpHost, smtpPort)
 
-			// Populate this week's data
-			if err := populateTimecardSheet(file, targetSheetName, req, weekData.Entries, weekData.WeekLabel, weekData.WeekNumber); err != nil {
-				return nil, fmt.Errorf("failed to populate sheet %s: %v", targetSheetName, err)
-			}
-		}
+    // Send email
+    err := smtp.SendMail(addr, auth, fromEmail, allRecipients, []byte(message))
+    if err != nil {
+        return fmt.Errorf("failed to send email: %v", err)
+    }
 
-		// Set the first week as active
-		file.SetActiveSheet(0)
-	} else {
-		// Single week: use the template's existing sheet
-		log.Printf("📊 Processing single-week timecard")
-
-		// Delete all sheets except the first one
-		sheetList := file.GetSheetList()
-		for i := 1; i < len(sheetList); i++ {
-			if err := file.DeleteSheet(sheetList[i]); err != nil {
-				log.Printf("⚠️ Could not delete sheet %s: %v", sheetList[i], err)
-			}
-		}
-
-		if req.WeekNumberLabel != "" {
-			file.SetSheetName(originalSheetName, req.WeekNumberLabel)
-		}
-
-		if err := populateTimecardSheet(file, file.GetSheetName(0), req, req.Entries, req.WeekNumberLabel, 1); err != nil {
-			return nil, fmt.Errorf("failed to populate sheet: %v", err)
-		}
-	}
-
-	log.Printf("✅ Excel file populated with data")
-	return file, nil
+    log.Printf("Email sent successfully to %s", to)
+    return nil
 }
 
-// populateTimecardSheet fills in a single sheet with timecard data
-func populateTimecardSheet(file *excelize.File, sheetName string, req TimecardRequest, entries []Entry, weekLabel string, weekNumber int) error {
-	log.Printf("✍️ Populating sheet: %s with %d entries", sheetName, len(entries))
+// buildEmailMessage constructs a MIME email message with attachment
+func buildEmailMessage(from string, to []string, cc []string, subject string, body string, attachment []byte, fileName string) string {
+    boundary := "==BOUNDARY=="
 
-	// Check if cells have formulas before overwriting
-	m2Value, _ := file.GetCellValue(sheetName, "M2")
-	if !strings.HasPrefix(m2Value, "=") {
-		file.SetCellValue(sheetName, "M2", req.EmployeeName)
-		log.Printf("✏️ Set M2 (Employee Name) = %s", req.EmployeeName)
-	} else {
-		log.Printf("⚠️ Skipping M2 (contains formula): %s", m2Value)
-	}
+    var buf bytes.Buffer
 
-	aj2Value, _ := file.GetCellValue(sheetName, "AJ2")
-	if !strings.HasPrefix(aj2Value, "=") {
-		file.SetCellValue(sheetName, "AJ2", req.PayPeriodNum)
-		log.Printf("✏️ Set AJ2 (PP#) = %d", req.PayPeriodNum)
-	} else {
-		log.Printf("⚠️ Skipping AJ2 (contains formula): %s", aj2Value)
-	}
+    // Headers
+    buf.WriteString(fmt.Sprintf("From: %s\r\n", from))
+    buf.WriteString(fmt.Sprintf("To: %s\r\n", strings.Join(to, ", ")))
+    if len(cc) > 0 {
+        buf.WriteString(fmt.Sprintf("Cc: %s\r\n", strings.Join(cc, ", ")))
+    }
+    buf.WriteString(fmt.Sprintf("Subject: %s\r\n", subject))
+    buf.WriteString("MIME-Version: 1.0\r\n")
+    buf.WriteString(fmt.Sprintf("Content-Type: multipart/mixed; boundary=\"%s\"\r\n", boundary))
+    buf.WriteString("\r\n")
 
-	aj3Value, _ := file.GetCellValue(sheetName, "AJ3")
-	if !strings.HasPrefix(aj3Value, "=") {
-		file.SetCellValue(sheetName, "AJ3", req.Year)
-		log.Printf("✏️ Set AJ3 (Year) = %d", req.Year)
-	} else {
-		log.Printf("⚠️ Skipping AJ3 (contains formula): %s", aj3Value)
-	}
+    // Body
+    buf.WriteString(fmt.Sprintf("--%s\r\n", boundary))
+    buf.WriteString("Content-Type: text/plain; charset=\"utf-8\"\r\n")
+    buf.WriteString("Content-Transfer-Encoding: quoted-printable\r\n")
+    buf.WriteString("\r\n")
+    buf.WriteString(body)
+    buf.WriteString("\r\n\r\n")
 
-	file.SetCellValue(sheetName, "AJ4", weekLabel)
-	log.Printf("✏️ Set AJ4 (Week Label) = %s", weekLabel)
+    // Attachment
+    if len(attachment) > 0 {
+        buf.WriteString(fmt.Sprintf("--%s\r\n", boundary))
+        buf.WriteString("Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\r\n")
+        buf.WriteString(fmt.Sprintf("Content-Disposition: attachment; filename=\"%s\"\r\n", fileName))
+        buf.WriteString("Content-Transfer-Encoding: base64\r\n")
+        buf.WriteString("\r\n")
 
-	// Parse week start date
-	weekStart, err := time.Parse(time.RFC3339, req.WeekStartDate)
-	if err != nil {
-		log.Printf("⚠️ Failed to parse week start date: %v", err)
-		weekStart = time.Now()
-	}
-	excelEpoch := time.Date(1899, 12, 30, 0, 0, 0, 0, time.UTC)
-	daysSinceEpoch := weekStart.Sub(excelEpoch).Hours() / 24
+        // Encode attachment in base64
+        encoded := base64.StdEncoding.EncodeToString(attachment)
+        // Split into 76-character lines as per RFC 2045
+        for i := 0; i < len(encoded); i += 76 {
+            end := i + 76
+            if end > len(encoded) {
+                end = len(encoded)
+            }
+            buf.WriteString(encoded[i:end])
+            buf.WriteString("\r\n")
+        }
+        buf.WriteString("\r\n")
+    }
 
-	b4Value, _ := file.GetCellValue(sheetName, "B4")
-	if !strings.HasPrefix(b4Value, "=") {
-		file.SetCellValue(sheetName, "B4", daysSinceEpoch)
-		log.Printf("✏️ Set B4 (Week Start) = %.2f", daysSinceEpoch)
-	} else {
-		log.Printf("⚠️ Skipping B4 (contains formula): %s", b4Value)
-	}
+    // End boundary
+    buf.WriteString(fmt.Sprintf("--%s--\r\n", boundary))
 
-	// Job columns
-	jobCodeColumns := []string{"C", "E", "G", "I", "K", "M", "O", "Q", "S", "U", "W", "Y", "AA", "AC", "AE", "AG"}
-	jobNameColumns := []string{"D", "F", "H", "J", "L", "N", "P", "R", "T", "V", "X", "Z", "AB", "AD", "AF", "AH"}
-
-	jobColumnMap := make(map[string]string)
-	for i, job := range req.Jobs {
-		if i >= len(jobCodeColumns) {
-			log.Printf("⚠️ Too many jobs (%d), template only supports %d jobs", len(req.Jobs), len(jobCodeColumns))
-			break
-		}
-
-		file.SetCellValue(sheetName, jobCodeColumns[i]+"4", job.JobCode)
-		file.SetCellValue(sheetName, jobNameColumns[i]+"4", job.JobName)
-		jobColumnMap[job.JobCode] = jobNameColumns[i]
-
-		log.Printf("📋 Set job %d: Code=%s in %s4, Name=%s in %s4", i+1, job.JobCode, jobCodeColumns[i], job.JobName, jobNameColumns[i])
-	}
-
-	// Group entries by date and job
-	type EntryKey struct {
-		Date    string
-		JobCode string
-	}
-	entryMap := make(map[EntryKey]Entry)
-	for _, entry := range entries {
-		key := EntryKey{Date: entry.Date, JobCode: entry.JobCode}
-		entryMap[key] = entry
-	}
-
-	// Fill in hours for each entry
-	for _, entry := range entryMap {
-		entryDate, err := time.Parse(time.RFC3339, entry.Date)
-		if err != nil {
-			log.Printf("⚠️ Failed to parse entry date %s: %v", entry.Date, err)
-			continue
-		}
-
-		jobCol, exists := jobColumnMap[entry.JobCode]
-		if !exists {
-			log.Printf("⚠️ Job code %s not found in job column map", entry.JobCode)
-			continue
-		}
-
-		dayOffset := int(entryDate.Sub(weekStart).Hours() / 24)
-		if dayOffset < 0 || dayOffset > 6 {
-			log.Printf("⚠️ Entry date %s is outside week range (offset=%d)", entry.Date, dayOffset)
-			continue
-		}
-
-		var row int
-		if entry.Overtime {
-			row = 16 + dayOffset
-		} else {
-			row = 5 + dayOffset
-		}
-
-		cellRef := jobCol + strconv.Itoa(row)
-		file.SetCellValue(sheetName, cellRef, entry.Hours)
-		log.Printf("✏️ Set %s = %.2f hours (Job: %s, Date: %s, OT: %v)",
-			cellRef, entry.Hours, entry.JobCode, entryDate.Format("Mon Jan 2"), entry.Overtime)
-	}
-
-	// Set date cells for each day
-	for i := 0; i < 7; i++ {
-		dayDate := weekStart.AddDate(0, 0, i)
-		daySerial := dayDate.Sub(excelEpoch).Hours() / 24
-
-		// Regular time dates
-		regularCell := "B" + strconv.Itoa(5+i)
-		regValue, _ := file.GetCellValue(sheetName, regularCell)
-		if !strings.HasPrefix(regValue, "=") {
-			file.SetCellValue(sheetName, regularCell, daySerial)
-		}
-
-		// Overtime dates
-		overtimeCell := "B" + strconv.Itoa(16+i)
-		otValue, _ := file.GetCellValue(sheetName, overtimeCell)
-		if !strings.HasPrefix(otValue, "=") {
-			file.SetCellValue(sheetName, overtimeCell, daySerial)
-		}
-	}
-
-	log.Printf("✅ Sheet %s populated successfully", sheetName)
-	return nil
+    return buf.String()
 }
