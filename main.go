@@ -1,48 +1,102 @@
 package main
 
-/*
-Example environment variable configuration for SendGrid SMTP (do NOT hardcode in source):
-
-export SMTP_HOST="smtp.sendgrid.net"
-export SMTP_PORT="587"
-export SMTP_USER="apikey"       # This must be literally "apikey" for SendGrid
-export SMTP_PASS="your_sendgrid_api_key_here"
-
-These environment variables should be set in your deployment environment securely.
-*/
-
 import (
-	"bytes"
+	"archive/zip"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
-	"mime/multipart"
 	"net/http"
-	"net/smtp"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/xuri/excelize/v2"
 )
 
+func main() {
+	// Check for template file on startup
+	if _, err := os.Stat("template.xlsx"); err != nil {
+		log.Fatal("❌ template.xlsx not found! Make sure it's in the same directory as the executable.")
+	}
+	log.Println("✅ template.xlsx found")
+
+	// Test LibreOffice on startup
+	log.Println("🔍 Checking LibreOffice installation...")
+	cmd := exec.Command("libreoffice", "--version")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Printf("⚠️ LibreOffice check failed: %v, output: %s", err, string(output))
+		log.Println("⚠️ PDF generation will be disabled")
+	} else {
+		log.Printf("✅ LibreOffice available: %s", strings.TrimSpace(string(output)))
+	}
+
+	// Check SendGrid configuration
+	if os.Getenv("SMTP_PASS") != "" && os.Getenv("SMTP_FROM") != "" {
+		log.Printf("✅ SendGrid configured: from=%s", os.Getenv("SMTP_FROM"))
+	} else {
+		log.Printf("⚠️ SendGrid not configured (SMTP_PASS or SMTP_FROM missing)")
+	}
+
+	// Health check endpoint
+	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+	})
+
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "ok",
+			"message": "Timecard API is running",
+			"version": "2.5.0",
+			"endpoints": []string{
+				"/api/generate-timecard",
+				"/api/email-timecard",
+				"/test/libreoffice",
+				"/health",
+			},
+		})
+	})
+
+	http.HandleFunc("/api/generate-timecard", generateTimecardHandler)
+	http.HandleFunc("/api/email-timecard", emailTimecardHandler)
+	http.HandleFunc("/test/libreoffice", testLibreOfficeHandler)
+
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
+	log.Printf("🚀 Server starting on port %s", port)
+	if err := http.ListenAndServe(":"+port, nil); err != nil {
+		log.Fatalf("❌ Server failed: %v", err)
+	}
+}
+
 type TimecardRequest struct {
 	EmployeeName    string     `json:"employee_name"`
 	PayPeriodNum    int        `json:"pay_period_num"`
-	Year           int        `json:"year"`
+	Year            int        `json:"year"`
 	WeekStartDate   string     `json:"week_start_date"`
 	WeekNumberLabel string     `json:"week_number_label"`
 	Jobs            []Job      `json:"jobs"`
 	Entries         []Entry    `json:"entries"`
-	Weeks           []WeekData `json:"weeks,omitempty"`
+	Weeks           []WeekData `json:"weeks"`
 	IncludePDF      bool       `json:"include_pdf"`
-	SendEmail       bool       `json:"send_email"`
-	EmailTo         string     `json:"email_to,omitempty"`
-	EmailFrom       string     `json:"email_from,omitempty"`
+}
+
+type EmailTimecardRequest struct {
+	TimecardRequest
+	To      string `json:"to"`
+	CC      string `json:"cc"`
+	Subject string `json:"subject"`
+	Body    string `json:"body"`
 }
 
 type Job struct {
@@ -51,11 +105,10 @@ type Job struct {
 }
 
 type Entry struct {
-	Date         string  `json:"date"`
-	JobCode      string  `json:"job_code"`
-	Hours        float64 `json:"hours"`
-	Overtime     bool    `json:"overtime"`
-	IsNightShift bool    `json:"is_night_shift"`
+	Date     string  `json:"date"`
+	JobCode  string  `json:"job_code"`
+	Hours    float64 `json:"hours"`
+	Overtime bool    `json:"overtime"`
 }
 
 type WeekData struct {
@@ -65,366 +118,607 @@ type WeekData struct {
 	Entries       []Entry `json:"entries"`
 }
 
-type TimecardResponse struct {
-	Success    bool   `json:"success"`
-	Error      string `json:"error,omitempty"`
-	XLSXBase64 string `json:"xlsx_base64,omitempty"`
-	PDFBase64  string `json:"pdf_base64,omitempty"`
-}
-
-func convertXLSXToPDFViaGotenberg(xlsxPath, pdfPath string) error {
-	gotenbergURL := os.Getenv("GOTENBERG_URL")
-	if gotenbergURL == "" {
-		gotenbergURL = "http://localhost:3000"
-	}
-
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
-
-	file, err := os.Open(xlsxPath)
-	if err != nil {
-		return fmt.Errorf("failed to open XLSX file: %v", err)
-	}
-	defer file.Close()
-
-	part, err := writer.CreateFormFile("files", filepath.Base(xlsxPath))
-	if err != nil {
-		return fmt.Errorf("failed to create form file part: %v", err)
-	}
-
-	if _, err = io.Copy(part, file); err != nil {
-		return fmt.Errorf("failed to copy XLSX file into form: %v", err)
-	}
-
-	if err := writer.Close(); err != nil {
-		return fmt.Errorf("failed to close multipart writer: %v", err)
-	}
-
-	req, err := http.NewRequest("POST", gotenbergURL+"/forms/libreoffice/convert", body)
-	if err != nil {
-		return fmt.Errorf("failed to create HTTP request: %v", err)
-	}
-	req.Header.Set("Content-Type", writer.FormDataContentType())
-
-	client := &http.Client{Timeout: 2 * time.Minute}
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("gotenberg request failed: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("gotenberg returned status %d: %s", resp.StatusCode, string(respBody))
-	}
-
-	pdfBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read gotenberg response body: %v", err)
-	}
-
-	if err := os.WriteFile(pdfPath, pdfBytes, 0644); err != nil {
-		return fmt.Errorf("failed to write PDF file: %v", err)
-	}
-
-	return nil
-}
-
-func convertXLSXToPDF(xlsxPath, pdfPath string) error {
-	var stdout, stderr bytes.Buffer
-	outDir := filepath.Dir(pdfPath)
-
-	cmd := exec.Command("libreoffice", "--headless", "--convert-to", "pdf", "--outdir", outDir, xlsxPath)
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("libreoffice conversion failed: %v, stderr: %s, stdout: %s", err, stderr.String(), stdout.String())
-	}
-
-	// LibreOffice creates a PDF with the same base name as the input XLSX file
-	xlsxBaseName := filepath.Base(xlsxPath)
-	pdfBaseName := xlsxBaseName[:len(xlsxBaseName)-len(filepath.Ext(xlsxBaseName))] + ".pdf"
-	generatedPDFPath := filepath.Join(outDir, pdfBaseName)
-
-	// Wait a bit for file system to sync (especially important on some cloud environments)
-	time.Sleep(100 * time.Millisecond)
-
-	// Verify the PDF was created
-	if _, err := os.Stat(generatedPDFPath); os.IsNotExist(err) {
-		return fmt.Errorf("PDF was not generated at expected path: %s", generatedPDFPath)
-	}
-
-	// If the generated PDF path differs from the desired path, rename it
-	if generatedPDFPath != pdfPath {
-		if err := os.Rename(generatedPDFPath, pdfPath); err != nil {
-			return fmt.Errorf("failed to rename PDF from %s to %s: %v", generatedPDFPath, pdfPath, err)
-		}
-	}
-
-	log.Printf("Successfully converted %s to %s", xlsxPath, pdfPath)
-	return nil
-}
-
 func generateTimecardHandler(w http.ResponseWriter, r *http.Request) {
+	log.Printf("📥 Received request to %s", r.URL.Path)
+
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+
 	var req TimecardRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondErr(w, err)
+		log.Printf("❌ Failed to decode request: %v", err)
+		respondError(w, err)
 		return
 	}
 
-	// Create XLSX file using excelize
-	file := excelize.NewFile()
-	index, err := file.NewSheet("Sheet1")
+	log.Printf("📥 Generating timecard for %s (IncludePDF: %v)", req.EmployeeName, req.IncludePDF)
+
+	// Create xlsx file from template
+	file, err := createXLSXFile(req)
 	if err != nil {
-		respondErr(w, err)
+		log.Printf("❌ Failed to create Excel: %v", err)
+		respondError(w, err)
 		return
 	}
-	file.SetCellValue("Sheet1", "A1", "Employee Name")
-	file.SetCellValue("Sheet1", "B1", req.EmployeeName)
-	file.SetCellValue("Sheet1", "A2", "Pay Period")
-	file.SetCellValue("Sheet1", "B2", req.PayPeriodNum)
-	file.SetCellValue("Sheet1", "A3", "Year")
-	file.SetCellValue("Sheet1", "B3", req.Year)
-	file.SetActiveSheet(index)
+	defer file.Close()
 
-	// Additional example: write weeks and entries if present
-	row := 5
-	for _, week := range req.Weeks {
-		file.SetCellValue("Sheet1", fmt.Sprintf("A%d", row), fmt.Sprintf("Week %d: %s", week.WeekNumber, week.WeekLabel))
-		row++
-		for _, entry := range week.Entries {
-			file.SetCellValue("Sheet1", fmt.Sprintf("A%d", row), entry.Date)
-			file.SetCellValue("Sheet1", fmt.Sprintf("B%d", row), entry.JobCode)
-			file.SetCellValue("Sheet1", fmt.Sprintf("C%d", row), entry.Hours)
-			file.SetCellValue("Sheet1", fmt.Sprintf("D%d", row), entry.Overtime)
-			file.SetCellValue("Sheet1", fmt.Sprintf("E%d", row), entry.IsNightShift)
-			row++
-		}
-		row++
-	}
-
-	dir := os.TempDir()
-	timestamp := time.Now().Format("20060102_150405")
-	xlsxPath := filepath.Join(dir, fmt.Sprintf("timecard_%s_%s.xlsx", req.EmployeeName, timestamp))
-	if err := file.SaveAs(xlsxPath); err != nil {
-		respondErr(w, err)
-		return
-	}
-	xlsxBytes, err := os.ReadFile(xlsxPath)
+	// Create temp directory
+	tempDir, err := os.MkdirTemp("", "timecard-*")
 	if err != nil {
-		respondErr(w, err)
+		log.Printf("❌ Failed to create temp dir: %v", err)
+		respondError(w, err)
 		return
 	}
-	resp := TimecardResponse{
-		Success:    true,
-		XLSXBase64: base64.StdEncoding.EncodeToString(xlsxBytes),
+	defer os.RemoveAll(tempDir)
+
+	// Save Excel file
+	excelFilename := fmt.Sprintf("Timecard_%s_%d(%d).xlsx", req.EmployeeName, req.Year, req.PayPeriodNum)
+	excelPath := filepath.Join(tempDir, excelFilename)
+
+	if err := file.SaveAs(excelPath); err != nil {
+		log.Printf("❌ Failed to save Excel: %v", err)
+		respondError(w, err)
+		return
 	}
 
+	log.Printf("✅ Excel file created: %s", excelPath)
+
+	// Generate PDF if requested
+	var pdfPath string
 	if req.IncludePDF {
-		pdfPath := filepath.Join(dir, fmt.Sprintf("timecard_%s_%s.pdf", req.EmployeeName, timestamp))
+		pdfFilename := fmt.Sprintf("Timecard_%s_%d(%d).pdf", req.EmployeeName, req.Year, req.PayPeriodNum)
+		pdfPath = filepath.Join(tempDir, pdfFilename)
 
-		err := convertXLSXToPDFViaGotenberg(xlsxPath, pdfPath)
-		if err != nil {
-			log.Printf("Gotenberg PDF conversion failed for %s: %v", req.EmployeeName, err)
-			err = convertXLSXToPDF(xlsxPath, pdfPath)
-			if err != nil {
-				log.Printf("LibreOffice PDF conversion fallback failed for %s: %v", req.EmployeeName, err)
-				respondErr(w, fmt.Errorf("PDF conversion failed: %v", err))
-				return
-			}
+		log.Printf("🔄 Converting Excel to PDF...")
+		if err := convertExcelToPDF(excelPath, pdfPath); err != nil {
+			log.Printf("⚠️ PDF conversion failed: %v", err)
+			pdfPath = ""
+		} else {
+			log.Printf("✅ PDF file created: %s", pdfPath)
 		}
+	}
 
-		pdfBytes, err := os.ReadFile(pdfPath)
-		if err != nil {
-			log.Printf("Failed to read PDF file %s: %v", pdfPath, err)
-			respondErr(w, fmt.Errorf("failed to read generated PDF: %v", err))
+	// If PDF was generated, return ZIP with both files
+	if pdfPath != "" && fileExists(pdfPath) {
+		log.Printf("📦 Creating ZIP archive with Excel and PDF")
+		zipBuffer := new(bytes.Buffer)
+		zipWriter := zip.NewWriter(zipBuffer)
+
+		if err := addFileToZip(zipWriter, excelPath, excelFilename); err != nil {
+			log.Printf("❌ Failed to add Excel to ZIP: %v", err)
+			respondError(w, err)
 			return
 		}
-		resp.PDFBase64 = base64.StdEncoding.EncodeToString(pdfBytes)
-		log.Printf("Successfully generated PDF for %s (%d bytes)", req.EmployeeName, len(pdfBytes))
 
-		// Send email if requested
-		if req.SendEmail && req.EmailTo != "" {
-			emailFrom := req.EmailFrom
-			if emailFrom == "" {
-				emailFrom = "noreply@yourdomain.com" // Default sender
-			}
-
-			attachments := make(map[string][]byte)
-			attachments[fmt.Sprintf("timecard_%s_%s.xlsx", req.EmployeeName, timestamp)] = xlsxBytes
-			attachments[fmt.Sprintf("timecard_%s_%s.pdf", req.EmployeeName, timestamp)] = pdfBytes
-
-			subject := fmt.Sprintf("Timecard for %s - Pay Period %d, %d", req.EmployeeName, req.PayPeriodNum, req.Year)
-			body := fmt.Sprintf("Please find attached the timecard for %s.\n\nPay Period: %d\nYear: %d\n\nBoth XLSX and PDF formats are attached.",
-				req.EmployeeName, req.PayPeriodNum, req.Year)
-
-			if err := sendEmailWithAttachments(req.EmailTo, emailFrom, subject, body, attachments); err != nil {
-				log.Printf("Failed to send email to %s: %v", req.EmailTo, err)
-				// Don't fail the whole request if email fails
-			}
+		pdfFilename := filepath.Base(pdfPath)
+		if err := addFileToZip(zipWriter, pdfPath, pdfFilename); err != nil {
+			log.Printf("❌ Failed to add PDF to ZIP: %v", err)
+			respondError(w, err)
+			return
 		}
 
-		// Optional: Clean up temp files
-		defer func() {
-			os.Remove(xlsxPath)
-			os.Remove(pdfPath)
-		}()
-	}
+		zipWriter.Close()
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
-}
-
-func respondErr(w http.ResponseWriter, err error) {
-	resp := TimecardResponse{Success: false, Error: err.Error()}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusInternalServerError)
-	json.NewEncoder(w).Encode(resp)
-}
-
-func healthHandler(w http.ResponseWriter, r *http.Request) {
-	gotenbergURL := os.Getenv("GOTENBERG_URL")
-	if gotenbergURL == "" {
-		gotenbergURL = "http://localhost:3000"
-	}
-
-	gotenbergStatus := "unavailable"
-	gotenbergErr := ""
-	gotenbergClient := &http.Client{Timeout: 3 * time.Second}
-	gotenbergResp, err := gotenbergClient.Get(gotenbergURL + "/health")
-	if err == nil && gotenbergResp.StatusCode == http.StatusOK {
-		gotenbergStatus = "ok"
+		w.Header().Set("Content-Type", "application/zip")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"timecard_%s_%d(%d).zip\"", req.EmployeeName, req.Year, req.PayPeriodNum))
+		w.Write(zipBuffer.Bytes())
+		log.Printf("✅ Sent ZIP file: %d bytes", zipBuffer.Len())
 	} else {
+		// Return just Excel
+		excelData, err := os.ReadFile(excelPath)
 		if err != nil {
-			gotenbergErr = err.Error()
-		} else if gotenbergResp != nil {
-			bodyBytes, _ := io.ReadAll(gotenbergResp.Body)
-			gotenbergErr = fmt.Sprintf("status %d: %s", gotenbergResp.StatusCode, strings.TrimSpace(string(bodyBytes)))
+			log.Printf("❌ Failed to read Excel: %v", err)
+			respondError(w, err)
+			return
 		}
-	}
-	if gotenbergResp != nil {
-		gotenbergResp.Body.Close()
-	}
 
-	var stdout, stderr bytes.Buffer
-	cmd := exec.Command("libreoffice", "--version")
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+		w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", excelFilename))
+		w.Write(excelData)
+		log.Printf("✅ Sent Excel file: %d bytes", len(excelData))
+	}
+}
 
-	if err := cmd.Run(); err != nil {
-		log.Printf("LibreOffice health check failed: %v, stderr: %s", err, stderr.String())
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusServiceUnavailable)
-		w.Write([]byte(fmt.Sprintf(`{"gotenberg":"%s","libreoffice_version":"%s","status":"libreoffice not available","error":"%s","gotenberg_error":"%s"}`, gotenbergStatus, "", err.Error(), gotenbergErr)))
+func emailTimecardHandler(w http.ResponseWriter, r *http.Request) {
+	log.Printf("📥 Received email request to %s", r.URL.Path)
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	version := strings.TrimSpace(stdout.String())
-	log.Printf("LibreOffice health check passed: %s", version)
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(fmt.Sprintf(`{"gotenberg":"%s","libreoffice_version":"%s","status":"ok","gotenberg_error":"%s"}`, gotenbergStatus, version, gotenbergErr)))
-}
-
-func main() {
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
+	var req EmailTimecardRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Printf("❌ Failed to decode email request: %v", err)
+		respondError(w, err)
+		return
 	}
 
-	gotenbergURL := os.Getenv("GOTENBERG_URL")
-	if gotenbergURL == "" {
-		gotenbergURL = "http://localhost:3000"
-	}
-	log.Printf("Gotenberg URL configured as: %s", gotenbergURL)
+	// Check SendGrid API key
+	sendgridAPIKey := os.Getenv("SMTP_PASS")
+	smtpFrom := os.Getenv("SMTP_FROM")
 
-	// SMTP environment variables configuration (compatible with SendGrid):
-	// SMTP_HOST, SMTP_PORT, SMTP_USER ("apikey"), SMTP_PASS (SendGrid API key)
-	log.Printf("SMTP configuration: host=%s port=%s user=%s (SendGrid compatible)", os.Getenv("SMTP_HOST"), os.Getenv("SMTP_PORT"), os.Getenv("SMTP_USER"))
-
-	http.HandleFunc("/api/generate-timecard", generateTimecardHandler)
-	http.HandleFunc("/health", healthHandler)
-	log.Printf("Server listening on :%s", port)
-	log.Fatal(http.ListenAndServe(":"+port, nil))
-}
-
-// sendEmailWithAttachments sends an email with file attachments using SMTP credentials from environment variables.
-// SMTP_USER must be "apikey" and SMTP_PASS should be your SendGrid API key for SendGrid compatibility.
-func sendEmailWithAttachments(to, from, subject, body string, attachments map[string][]byte) error {
-	smtpHost := os.Getenv("SMTP_HOST")
-	smtpPort := os.Getenv("SMTP_PORT")
-	smtpUser := os.Getenv("SMTP_USER")
-	smtpPass := os.Getenv("SMTP_PASS")
-
-	if smtpHost == "" || smtpPort == "" || smtpUser == "" || smtpPass == "" {
-		return fmt.Errorf("SMTP configuration incomplete: ensure SMTP_HOST, SMTP_PORT, SMTP_USER, and SMTP_PASS are set")
+	if sendgridAPIKey == "" || smtpFrom == "" {
+		log.Printf("⚠️ SendGrid not configured")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{
+			"status":  "error",
+			"message": "SendGrid not configured on server (SMTP_PASS or SMTP_FROM missing)",
+		})
+		return
 	}
 
-	log.Printf("Attempting to send email via %s:%s to %s", smtpHost, smtpPort, to)
+	log.Printf("📧 Sending email from %s to %s via SendGrid", smtpFrom, req.To)
 
-	// Build email message with MIME multipart
-	boundary := "----=_NextPart_000_0000_01D00000.00000000"
-
-	var emailBuffer bytes.Buffer
-	emailBuffer.WriteString(fmt.Sprintf("From: %s\r\n", from))
-	emailBuffer.WriteString(fmt.Sprintf("To: %s\r\n", to))
-	emailBuffer.WriteString(fmt.Sprintf("Subject: %s\r\n", subject))
-	emailBuffer.WriteString("MIME-Version: 1.0\r\n")
-	emailBuffer.WriteString(fmt.Sprintf("Content-Type: multipart/mixed; boundary=\"%s\"\r\n\r\n", boundary))
-
-	// Email body
-	emailBuffer.WriteString(fmt.Sprintf("--%s\r\n", boundary))
-	emailBuffer.WriteString("Content-Type: text/plain; charset=\"utf-8\"\r\n")
-	emailBuffer.WriteString("Content-Transfer-Encoding: 7bit\r\n\r\n")
-	emailBuffer.WriteString(body)
-	emailBuffer.WriteString("\r\n\r\n")
-
-	// Add attachments
-	for filename, fileData := range attachments {
-		emailBuffer.WriteString(fmt.Sprintf("--%s\r\n", boundary))
-
-		// Determine content type based on file extension
-		contentType := "application/octet-stream"
-		if filepath.Ext(filename) == ".pdf" {
-			contentType = "application/pdf"
-		} else if filepath.Ext(filename) == ".xlsx" {
-			contentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-		}
-
-		emailBuffer.WriteString(fmt.Sprintf("Content-Type: %s; name=\"%s\"\r\n", contentType, filename))
-		emailBuffer.WriteString(fmt.Sprintf("Content-Disposition: attachment; filename=\"%s\"\r\n", filename))
-		emailBuffer.WriteString("Content-Transfer-Encoding: base64\r\n\r\n")
-
-		encoded := base64.StdEncoding.EncodeToString(fileData)
-		// Split into 76-character lines per RFC 2045
-		for i := 0; i < len(encoded); i += 76 {
-			end := i + 76
-			if end > len(encoded) {
-				end = len(encoded)
-			}
-			emailBuffer.WriteString(encoded[i:end])
-			emailBuffer.WriteString("\r\n")
-		}
-	}
-
-	emailBuffer.WriteString(fmt.Sprintf("--%s--\r\n", boundary))
-
-	// Send via SMTP with better error handling
-	auth := smtp.PlainAuth("", smtpUser, smtpPass, smtpHost)
-	addr := fmt.Sprintf("%s:%s", smtpHost, smtpPort)
-
-	log.Printf("Connecting to SMTP server at %s", addr)
-	err := smtp.SendMail(addr, auth, from, []string{to}, emailBuffer.Bytes())
+	// Generate Excel file from template
+	file, err := createXLSXFile(req.TimecardRequest)
 	if err != nil {
-		log.Printf("SMTP send failed: %v", err)
-		return fmt.Errorf("failed to send email: %v", err)
+		respondError(w, err)
+		return
+	}
+	defer file.Close()
+
+	// Create temp directory
+	tempDir, err := os.MkdirTemp("", "timecard-*")
+	if err != nil {
+		respondError(w, err)
+		return
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Save Excel
+	excelFilename := fmt.Sprintf("Timecard_%s_%d(%d).xlsx", req.EmployeeName, req.Year, req.PayPeriodNum)
+	excelPath := filepath.Join(tempDir, excelFilename)
+	if err := file.SaveAs(excelPath); err != nil {
+		respondError(w, err)
+		return
 	}
 
-	log.Printf("Email sent successfully to %s with %d attachment(s)", to, len(attachments))
+	log.Printf("✅ Excel file created for email: %s", excelPath)
+
+	// Generate PDF if requested
+	var pdfPath string
+	if req.IncludePDF {
+		pdfFilename := fmt.Sprintf("Timecard_%s_%d(%d).pdf", req.EmployeeName, req.Year, req.PayPeriodNum)
+		pdfPath = filepath.Join(tempDir, pdfFilename)
+
+		log.Printf("🔄 Converting Excel to PDF for email...")
+		if err := convertExcelToPDF(excelPath, pdfPath); err != nil {
+			log.Printf("⚠️ PDF generation failed: %v", err)
+			pdfPath = ""
+		} else {
+			log.Printf("✅ PDF file created for email: %s", pdfPath)
+		}
+	}
+
+	// Send email via SendGrid HTTP API
+	if err := sendEmailViaSendGrid(sendgridAPIKey, smtpFrom, req.To, req.CC, req.Subject, req.Body, excelPath, pdfPath); err != nil {
+		log.Printf("❌ Failed to send email: %v", err)
+		respondError(w, err)
+		return
+	}
+
+	log.Printf("✅ Email sent successfully to %s", req.To)
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{
+		"status":  "success",
+		"message": "Email sent successfully",
+	})
+}
+
+func testLibreOfficeHandler(w http.ResponseWriter, r *http.Request) {
+	log.Printf("🔍 Testing LibreOffice installation")
+	cmd := exec.Command("libreoffice", "--version")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Printf("❌ LibreOffice test failed: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(fmt.Sprintf("❌ Error: %v\nOutput: %s", err, string(output))))
+		return
+	}
+	log.Printf("✅ LibreOffice test passed")
+	w.Write([]byte(fmt.Sprintf("✅ LibreOffice installed:\n%s", string(output))))
+}
+
+func convertExcelToPDF(excelPath, pdfPath string) error {
+	outputDir := filepath.Dir(pdfPath)
+
+	cmd := exec.Command("libreoffice",
+		"--headless",
+		"--convert-to", "pdf",
+		"--outdir", outputDir,
+		excelPath)
+
+	log.Printf("🔧 Running: %s", cmd.String())
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("LibreOffice conversion failed: %v, output: %s", err, string(output))
+	}
+
+	log.Printf("✅ LibreOffice output: %s", string(output))
+
+	baseName := strings.TrimSuffix(filepath.Base(excelPath), filepath.Ext(excelPath))
+	generatedPDF := filepath.Join(outputDir, baseName+".pdf")
+
+	if generatedPDF != pdfPath {
+		if err := os.Rename(generatedPDF, pdfPath); err != nil {
+			return fmt.Errorf("failed to rename PDF: %v", err)
+		}
+	}
+
+	return nil
+}
+
+func addFileToZip(zipWriter *zip.Writer, filePath, fileName string) error {
+	fileData, err := os.ReadFile(filePath)
+	if err != nil {
+		return err
+	}
+
+	writer, err := zipWriter.Create(fileName)
+	if err != nil {
+		return err
+	}
+
+	_, err = writer.Write(fileData)
+	return err
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+func respondError(w http.ResponseWriter, err error) {
+	log.Printf("❌ Error: %v", err)
+	w.WriteHeader(http.StatusInternalServerError)
+	json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+}
+
+func sendEmailViaSendGrid(apiKey, from, to, cc, subject, body, excelPath, pdfPath string) error {
+	log.Printf("📧 Using SendGrid HTTP API v3")
+
+	// Read Excel attachment
+	excelData, err := os.ReadFile(excelPath)
+	if err != nil {
+		return fmt.Errorf("failed to read Excel file: %v", err)
+	}
+
+	// Read PDF attachment if exists
+	var pdfData []byte
+	if pdfPath != "" && fileExists(pdfPath) {
+		pdfData, _ = os.ReadFile(pdfPath)
+	}
+
+	// Build SendGrid API request structure
+	type Attachment struct {
+		Content     string `json:"content"`
+		Type        string `json:"type"`
+		Filename    string `json:"filename"`
+		Disposition string `json:"disposition"`
+	}
+
+	type Email struct {
+		Email string `json:"email"`
+	}
+
+	type Personalization struct {
+		To []Email `json:"to"`
+		Cc []Email `json:"cc,omitempty"`
+	}
+
+	type Content struct {
+		Type  string `json:"type"`
+		Value string `json:"value"`
+	}
+
+	type SendGridRequest struct {
+		Personalizations []Personalization `json:"personalizations"`
+		From             Email             `json:"from"`
+		Subject          string            `json:"subject"`
+		Content          []Content         `json:"content"`
+		Attachments      []Attachment      `json:"attachments"`
+	}
+
+	// Build the request
+	req := SendGridRequest{
+		Personalizations: []Personalization{
+			{
+				To: []Email{{Email: to}},
+			},
+		},
+		From:    Email{Email: from},
+		Subject: subject,
+		Content: []Content{
+			{
+				Type:  "text/plain",
+				Value: body,
+			},
+		},
+		Attachments: []Attachment{
+			{
+				Content:     base64.StdEncoding.EncodeToString(excelData),
+				Type:        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+				Filename:    filepath.Base(excelPath),
+				Disposition: "attachment",
+			},
+		},
+	}
+
+	// Add CC recipients if provided
+	if cc != "" {
+		ccAddresses := strings.Split(cc, ",")
+		for _, addr := range ccAddresses {
+			addr = strings.TrimSpace(addr)
+			if addr != "" {
+				req.Personalizations[0].Cc = append(req.Personalizations[0].Cc, Email{Email: addr})
+			}
+		}
+	}
+
+	// Add PDF attachment if exists
+	if len(pdfData) > 0 {
+		req.Attachments = append(req.Attachments, Attachment{
+			Content:     base64.StdEncoding.EncodeToString(pdfData),
+			Type:        "application/pdf",
+			Filename:    filepath.Base(pdfPath),
+			Disposition: "attachment",
+		})
+		log.Printf("📎 Added PDF attachment: %s (%d bytes)", filepath.Base(pdfPath), len(pdfData))
+	}
+
+	// Encode to JSON
+	jsonData, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("failed to encode JSON: %v", err)
+	}
+
+	// Send HTTP request to SendGrid API
+	httpReq, err := http.NewRequest("POST", "https://api.sendgrid.com/v3/mail/send", strings.NewReader(string(jsonData)))
+	if err != nil {
+		return fmt.Errorf("failed to create HTTP request: %v", err)
+	}
+
+	httpReq.Header.Set("Authorization", "Bearer "+apiKey)
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("HTTP request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// SendGrid returns 202 Accepted on success
+	if resp.StatusCode != 202 {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("SendGrid API error: %d - %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	log.Printf("✅ Email sent via SendGrid (status: %d)", resp.StatusCode)
+	return nil
+}
+
+// createXLSXFile loads the template and populates it with timecard data
+func createXLSXFile(req TimecardRequest) (*excelize.File, error) {
+	log.Printf("📂 Loading template.xlsx...")
+
+	// Load the template file
+	file, err := excelize.OpenFile("template.xlsx")
+	if err != nil {
+		return nil, fmt.Errorf("failed to load template: %v", err)
+	}
+
+	log.Printf("✅ Template loaded successfully")
+
+	// Get the first sheet name from template
+	originalSheetName := file.GetSheetName(0)
+	log.Printf("🔍 Original template sheet name: %s", originalSheetName)
+
+	// Check if multi-week data is provided
+	if req.Weeks != nil && len(req.Weeks) > 0 {
+		log.Printf("📊 Processing multi-week timecard (%d weeks)", len(req.Weeks))
+
+		// Delete all sheets except the first one
+		sheetList := file.GetSheetList()
+		for i := 1; i < len(sheetList); i++ {
+			if err := file.DeleteSheet(sheetList[i]); err != nil {
+				log.Printf("⚠️ Could not delete sheet %s: %v", sheetList[i], err)
+			}
+		}
+
+		// Process each week
+		for i, weekData := range req.Weeks {
+			var targetSheetName string
+
+			if i == 0 {
+				// First week: rename the original sheet
+				targetSheetName = weekData.WeekLabel
+				if err := file.SetSheetName(originalSheetName, targetSheetName); err != nil {
+					return nil, fmt.Errorf("failed to rename first sheet to %s: %v", targetSheetName, err)
+				}
+				originalSheetName = targetSheetName
+				log.Printf("📝 Renamed original sheet to: %s", targetSheetName)
+			} else {
+				// Subsequent weeks: copy the first week sheet
+				targetSheetName = weekData.WeekLabel
+				newSheetIndex, err := file.NewSheet(targetSheetName)
+				if err != nil {
+					return nil, fmt.Errorf("failed to create sheet for week %d: %v", i+1, err)
+				}
+
+				if err := file.CopySheet(0, newSheetIndex); err != nil {
+					return nil, fmt.Errorf("failed to copy sheet for week %d: %v", i+1, err)
+				}
+				log.Printf("📝 Created and copied sheet: %s", targetSheetName)
+			}
+
+			// Populate this week's data
+			if err := populateTimecardSheet(file, targetSheetName, req, weekData.Entries, weekData.WeekLabel, weekData.WeekNumber); err != nil {
+				return nil, fmt.Errorf("failed to populate sheet %s: %v", targetSheetName, err)
+			}
+		}
+
+		// Set the first week as active
+		file.SetActiveSheet(0)
+	} else {
+		// Single week: use the template's existing sheet
+		log.Printf("📊 Processing single-week timecard")
+
+		// Delete all sheets except the first one
+		sheetList := file.GetSheetList()
+		for i := 1; i < len(sheetList); i++ {
+			if err := file.DeleteSheet(sheetList[i]); err != nil {
+				log.Printf("⚠️ Could not delete sheet %s: %v", sheetList[i], err)
+			}
+		}
+
+		if req.WeekNumberLabel != "" {
+			file.SetSheetName(originalSheetName, req.WeekNumberLabel)
+		}
+
+		if err := populateTimecardSheet(file, file.GetSheetName(0), req, req.Entries, req.WeekNumberLabel, 1); err != nil {
+			return nil, fmt.Errorf("failed to populate sheet: %v", err)
+		}
+	}
+
+	log.Printf("✅ Excel file populated with data")
+	return file, nil
+}
+
+// populateTimecardSheet fills in a single sheet with timecard data
+func populateTimecardSheet(file *excelize.File, sheetName string, req TimecardRequest, entries []Entry, weekLabel string, weekNumber int) error {
+	log.Printf("✍️ Populating sheet: %s with %d entries", sheetName, len(entries))
+
+	// Check if cells have formulas before overwriting
+	m2Value, _ := file.GetCellValue(sheetName, "M2")
+	if !strings.HasPrefix(m2Value, "=") {
+		file.SetCellValue(sheetName, "M2", req.EmployeeName)
+		log.Printf("✏️ Set M2 (Employee Name) = %s", req.EmployeeName)
+	} else {
+		log.Printf("⚠️ Skipping M2 (contains formula): %s", m2Value)
+	}
+
+	aj2Value, _ := file.GetCellValue(sheetName, "AJ2")
+	if !strings.HasPrefix(aj2Value, "=") {
+		file.SetCellValue(sheetName, "AJ2", req.PayPeriodNum)
+		log.Printf("✏️ Set AJ2 (PP#) = %d", req.PayPeriodNum)
+	} else {
+		log.Printf("⚠️ Skipping AJ2 (contains formula): %s", aj2Value)
+	}
+
+	aj3Value, _ := file.GetCellValue(sheetName, "AJ3")
+	if !strings.HasPrefix(aj3Value, "=") {
+		file.SetCellValue(sheetName, "AJ3", req.Year)
+		log.Printf("✏️ Set AJ3 (Year) = %d", req.Year)
+	} else {
+		log.Printf("⚠️ Skipping AJ3 (contains formula): %s", aj3Value)
+	}
+
+	file.SetCellValue(sheetName, "AJ4", weekLabel)
+	log.Printf("✏️ Set AJ4 (Week Label) = %s", weekLabel)
+
+	// Parse week start date
+	weekStart, err := time.Parse(time.RFC3339, req.WeekStartDate)
+	if err != nil {
+		log.Printf("⚠️ Failed to parse week start date: %v", err)
+		weekStart = time.Now()
+	}
+	excelEpoch := time.Date(1899, 12, 30, 0, 0, 0, 0, time.UTC)
+	daysSinceEpoch := weekStart.Sub(excelEpoch).Hours() / 24
+
+	b4Value, _ := file.GetCellValue(sheetName, "B4")
+	if !strings.HasPrefix(b4Value, "=") {
+		file.SetCellValue(sheetName, "B4", daysSinceEpoch)
+		log.Printf("✏️ Set B4 (Week Start) = %.2f", daysSinceEpoch)
+	} else {
+		log.Printf("⚠️ Skipping B4 (contains formula): %s", b4Value)
+	}
+
+	// Job columns
+	jobCodeColumns := []string{"C", "E", "G", "I", "K", "M", "O", "Q", "S", "U", "W", "Y", "AA", "AC", "AE", "AG"}
+	jobNameColumns := []string{"D", "F", "H", "J", "L", "N", "P", "R", "T", "V", "X", "Z", "AB", "AD", "AF", "AH"}
+
+	jobColumnMap := make(map[string]string)
+	for i, job := range req.Jobs {
+		if i >= len(jobCodeColumns) {
+			log.Printf("⚠️ Too many jobs (%d), template only supports %d jobs", len(req.Jobs), len(jobCodeColumns))
+			break
+		}
+
+		file.SetCellValue(sheetName, jobCodeColumns[i]+"4", job.JobCode)
+		file.SetCellValue(sheetName, jobNameColumns[i]+"4", job.JobName)
+		jobColumnMap[job.JobCode] = jobNameColumns[i]
+
+		log.Printf("📋 Set job %d: Code=%s in %s4, Name=%s in %s4", i+1, job.JobCode, jobCodeColumns[i], job.JobName, jobNameColumns[i])
+	}
+
+	// Group entries by date and job
+	type EntryKey struct {
+		Date    string
+		JobCode string
+	}
+	entryMap := make(map[EntryKey]Entry)
+	for _, entry := range entries {
+		key := EntryKey{Date: entry.Date, JobCode: entry.JobCode}
+		entryMap[key] = entry
+	}
+
+	// Fill in hours for each entry
+	for _, entry := range entryMap {
+		entryDate, err := time.Parse(time.RFC3339, entry.Date)
+		if err != nil {
+			log.Printf("⚠️ Failed to parse entry date %s: %v", entry.Date, err)
+			continue
+		}
+
+		jobCol, exists := jobColumnMap[entry.JobCode]
+		if !exists {
+			log.Printf("⚠️ Job code %s not found in job column map", entry.JobCode)
+			continue
+		}
+
+		dayOffset := int(entryDate.Sub(weekStart).Hours() / 24)
+		if dayOffset < 0 || dayOffset > 6 {
+			log.Printf("⚠️ Entry date %s is outside week range (offset=%d)", entry.Date, dayOffset)
+			continue
+		}
+
+		var row int
+		if entry.Overtime {
+			row = 16 + dayOffset
+		} else {
+			row = 5 + dayOffset
+		}
+
+		cellRef := jobCol + strconv.Itoa(row)
+		file.SetCellValue(sheetName, cellRef, entry.Hours)
+		log.Printf("✏️ Set %s = %.2f hours (Job: %s, Date: %s, OT: %v)",
+			cellRef, entry.Hours, entry.JobCode, entryDate.Format("Mon Jan 2"), entry.Overtime)
+	}
+
+	// Set date cells for each day
+	for i := 0; i < 7; i++ {
+		dayDate := weekStart.AddDate(0, 0, i)
+		daySerial := dayDate.Sub(excelEpoch).Hours() / 24
+
+		// Regular time dates
+		regularCell := "B" + strconv.Itoa(5+i)
+		regValue, _ := file.GetCellValue(sheetName, regularCell)
+		if !strings.HasPrefix(regValue, "=") {
+			file.SetCellValue(sheetName, regularCell, daySerial)
+		}
+
+		// Overtime dates
+		overtimeCell := "B" + strconv.Itoa(16+i)
+		otValue, _ := file.GetCellValue(sheetName, overtimeCell)
+		if !strings.HasPrefix(otValue, "=") {
+			file.SetCellValue(sheetName, overtimeCell, daySerial)
+		}
+	}
+
+	log.Printf("✅ Sheet %s populated successfully", sheetName)
 	return nil
 }
