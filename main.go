@@ -10,15 +10,37 @@ import (
     "log"
     "net/http"
     "net/smtp"
+    "net/url"
     "os"
     "os/exec"
     "path/filepath"
     "strconv"
     "strings"
+    "sync"
     "time"
 
     "github.com/xuri/excelize/v2"
 )
+
+// ====== Microsoft Graph API Types ======
+
+type GraphAuthResponse struct {
+    TokenType    string `json:"token_type"`
+    ExpiresIn    int    `json:"expires_in"`
+    AccessToken  string `json:"access_token"`
+}
+
+type GraphConfig struct {
+    TenantID     string
+    ClientID     string
+    ClientSecret string
+    UserID       string
+    mu           sync.RWMutex
+    token        string
+    tokenExpiry  time.Time
+}
+
+var graphClient *GraphConfig
 
 // ====== Data Types ======
 
@@ -66,6 +88,195 @@ type WeekData struct {
 
 // ====== Helpers ======
 
+// Initialize Microsoft Graph Client
+func initGraphClient() {
+    tenantID := os.Getenv("MICROSOFT_TENANT_ID")
+    clientID := os.Getenv("MICROSOFT_CLIENT_ID")
+    clientSecret := os.Getenv("MICROSOFT_CLIENT_SECRET")
+    userID := os.Getenv("MICROSOFT_USER_ID")
+
+    if tenantID != "" && clientID != "" && clientSecret != "" && userID != "" {
+        graphClient = &GraphConfig{
+            TenantID:     tenantID,
+            ClientID:     clientID,
+            ClientSecret: clientSecret,
+            UserID:       userID,
+        }
+        log.Printf("✅ Microsoft Graph API configured (User: %s)", userID)
+    } else {
+        log.Printf("ℹ️  Microsoft Graph API not configured (will use LibreOffice)")
+    }
+}
+
+// Get or refresh Microsoft Graph access token
+func (gc *GraphConfig) getAccessToken() (string, error) {
+    gc.mu.RLock()
+    if gc.token != "" && time.Now().Before(gc.tokenExpiry) {
+        token := gc.token
+        gc.mu.RUnlock()
+        return token, nil
+    }
+    gc.mu.RUnlock()
+
+    gc.mu.Lock()
+    defer gc.mu.Unlock()
+
+    // Double-check after acquiring write lock
+    if gc.token != "" && time.Now().Before(gc.tokenExpiry) {
+        return gc.token, nil
+    }
+
+    tokenURL := fmt.Sprintf("https://login.microsoftonline.com/%s/oauth2/v2.0/token", gc.TenantID)
+
+    data := url.Values{}
+    data.Set("client_id", gc.ClientID)
+    data.Set("client_secret", gc.ClientSecret)
+    data.Set("scope", "https://graph.microsoft.com/.default")
+    data.Set("grant_type", "client_credentials")
+
+    req, err := http.NewRequest("POST", tokenURL, strings.NewReader(data.Encode()))
+    if err != nil {
+        return "", fmt.Errorf("failed to create token request: %w", err)
+    }
+
+    req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+    client := &http.Client{Timeout: 30 * time.Second}
+    resp, err := client.Do(req)
+    if err != nil {
+        return "", fmt.Errorf("failed to get token: %w", err)
+    }
+    defer resp.Body.Close()
+
+    if resp.StatusCode != http.StatusOK {
+        body, _ := io.ReadAll(resp.Body)
+        return "", fmt.Errorf("token request failed with status %d: %s", resp.StatusCode, string(body))
+    }
+
+    var authResp GraphAuthResponse
+    if err := json.NewDecoder(resp.Body).Decode(&authResp); err != nil {
+        return "", fmt.Errorf("failed to decode token response: %w", err)
+    }
+
+    gc.token = authResp.AccessToken
+    gc.tokenExpiry = time.Now().Add(time.Duration(authResp.ExpiresIn-300) * time.Second) // 5 min buffer
+
+    log.Printf("✅ Microsoft Graph token acquired (expires in %d seconds)", authResp.ExpiresIn)
+    return gc.token, nil
+}
+
+// Convert Excel to PDF using Microsoft Graph API
+func (gc *GraphConfig) convertExcelToPDFGraph(excelPath, pdfPath string) error {
+    log.Printf("🔄 Converting Excel to PDF using Microsoft Graph API...")
+
+    token, err := gc.getAccessToken()
+    if err != nil {
+        return fmt.Errorf("failed to get access token: %w", err)
+    }
+
+    // Read Excel file
+    excelData, err := os.ReadFile(excelPath)
+    if err != nil {
+        return fmt.Errorf("failed to read Excel file: %w", err)
+    }
+
+    // Step 1: Upload to OneDrive
+    uploadURL := fmt.Sprintf("https://graph.microsoft.com/v1.0/users/%s/drive/root:/temp-timecard-%d.xlsx:/content",
+        gc.UserID, time.Now().UnixNano())
+
+    uploadReq, err := http.NewRequest("PUT", uploadURL, bytes.NewReader(excelData))
+    if err != nil {
+        return fmt.Errorf("failed to create upload request: %w", err)
+    }
+
+    uploadReq.Header.Set("Authorization", "Bearer "+token)
+    uploadReq.Header.Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+    client := &http.Client{Timeout: 60 * time.Second}
+    uploadResp, err := client.Do(uploadReq)
+    if err != nil {
+        return fmt.Errorf("failed to upload file: %w", err)
+    }
+    defer uploadResp.Body.Close()
+
+    if uploadResp.StatusCode != http.StatusOK && uploadResp.StatusCode != http.StatusCreated {
+        body, _ := io.ReadAll(uploadResp.Body)
+        return fmt.Errorf("file upload failed with status %d: %s", uploadResp.StatusCode, string(body))
+    }
+
+    var uploadResult struct {
+        ID   string `json:"id"`
+        Name string `json:"name"`
+    }
+    if err := json.NewDecoder(uploadResp.Body).Decode(&uploadResult); err != nil {
+        return fmt.Errorf("failed to decode upload response: %w", err)
+    }
+
+    log.Printf("✅ File uploaded to OneDrive (ID: %s)", uploadResult.ID)
+
+    // Step 2: Convert to PDF
+    convertURL := fmt.Sprintf("https://graph.microsoft.com/v1.0/users/%s/drive/items/%s/content?format=pdf",
+        gc.UserID, uploadResult.ID)
+
+    // Wait a moment for the file to be processed
+    time.Sleep(2 * time.Second)
+
+    convertReq, err := http.NewRequest("GET", convertURL, nil)
+    if err != nil {
+        return fmt.Errorf("failed to create convert request: %w", err)
+    }
+
+    convertReq.Header.Set("Authorization", "Bearer "+token)
+
+    convertResp, err := client.Do(convertReq)
+    if err != nil {
+        return fmt.Errorf("failed to convert file: %w", err)
+    }
+    defer convertResp.Body.Close()
+
+    if convertResp.StatusCode != http.StatusOK {
+        body, _ := io.ReadAll(convertResp.Body)
+        return fmt.Errorf("PDF conversion failed with status %d: %s", convertResp.StatusCode, string(body))
+    }
+
+    // Save PDF
+    pdfData, err := io.ReadAll(convertResp.Body)
+    if err != nil {
+        return fmt.Errorf("failed to read PDF data: %w", err)
+    }
+
+    if err := os.WriteFile(pdfPath, pdfData, 0644); err != nil {
+        return fmt.Errorf("failed to write PDF file: %w", err)
+    }
+
+    log.Printf("✅ PDF generated using Microsoft Graph API: %s", pdfPath)
+
+    // Step 3: Clean up - delete the temporary file from OneDrive
+    deleteURL := fmt.Sprintf("https://graph.microsoft.com/v1.0/users/%s/drive/items/%s",
+        gc.UserID, uploadResult.ID)
+
+    deleteReq, err := http.NewRequest("DELETE", deleteURL, nil)
+    if err != nil {
+        log.Printf("⚠️  Failed to create delete request: %v", err)
+        return nil // Don't fail the whole operation
+    }
+
+    deleteReq.Header.Set("Authorization", "Bearer "+token)
+
+    deleteResp, err := client.Do(deleteReq)
+    if err != nil {
+        log.Printf("⚠️  Failed to delete temporary file: %v", err)
+        return nil
+    }
+    defer deleteResp.Body.Close()
+
+    if deleteResp.StatusCode == http.StatusNoContent {
+        log.Printf("🗑️  Temporary file deleted from OneDrive")
+    }
+
+    return nil
+}
+
 func respondError(w http.ResponseWriter, err error) {
     log.Printf("❌ Error: %v", err)
     w.Header().Set("Content-Type", "application/json")
@@ -76,8 +287,18 @@ func respondError(w http.ResponseWriter, err error) {
 }
 
 func convertExcelToPDF(excelPath, pdfPath string) error {
-    log.Printf("🖨️ Converting Excel to PDF: %s -> %s", excelPath, pdfPath)
+    log.Printf("🖨️  Converting Excel to PDF: %s -> %s", excelPath, pdfPath)
 
+    // Try Microsoft Graph API first if configured
+    if graphClient != nil {
+        err := graphClient.convertExcelToPDFGraph(excelPath, pdfPath)
+        if err == nil {
+            return nil
+        }
+        log.Printf("⚠️  Microsoft Graph conversion failed: %v, falling back to LibreOffice", err)
+    }
+
+    // Fallback to LibreOffice
     cmd := exec.Command("libreoffice",
         "--headless",
         "--convert-to", "pdf",
@@ -757,9 +978,77 @@ func testLibreOfficeHandler(w http.ResponseWriter, r *http.Request) {
     _, _ = fmt.Fprintf(w, "LibreOffice is working:\n%s", string(output))
 }
 
+func testGraphAPIHandler(w http.ResponseWriter, r *http.Request) {
+    if graphClient == nil {
+        w.WriteHeader(http.StatusServiceUnavailable)
+        w.Header().Set("Content-Type", "application/json")
+        _ = json.NewEncoder(w).Encode(map[string]string{
+            "status": "not_configured",
+            "error":  "Microsoft Graph API is not configured. Please set MICROSOFT_TENANT_ID, MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET, and MICROSOFT_USER_ID environment variables.",
+        })
+        return
+    }
+
+    token, err := graphClient.getAccessToken()
+    if err != nil {
+        w.WriteHeader(http.StatusInternalServerError)
+        w.Header().Set("Content-Type", "application/json")
+        _ = json.NewEncoder(w).Encode(map[string]string{
+            "status": "error",
+            "error":  fmt.Sprintf("Failed to get access token: %v", err),
+        })
+        return
+    }
+
+    // Test API call - get user profile
+    userURL := fmt.Sprintf("https://graph.microsoft.com/v1.0/users/%s", graphClient.UserID)
+    req, _ := http.NewRequest("GET", userURL, nil)
+    req.Header.Set("Authorization", "Bearer "+token)
+
+    client := &http.Client{Timeout: 10 * time.Second}
+    resp, err := client.Do(req)
+    if err != nil {
+        w.WriteHeader(http.StatusInternalServerError)
+        w.Header().Set("Content-Type", "application/json")
+        _ = json.NewEncoder(w).Encode(map[string]string{
+            "status": "error",
+            "error":  fmt.Sprintf("API call failed: %v", err),
+        })
+        return
+    }
+    defer resp.Body.Close()
+
+    var result map[string]interface{}
+    _ = json.NewDecoder(resp.Body).Decode(&result)
+
+    w.WriteHeader(http.StatusOK)
+    w.Header().Set("Content-Type", "application/json")
+    _ = json.NewEncoder(w).Encode(map[string]interface{}{
+        "status":       "ok",
+        "tenant_id":    graphClient.TenantID,
+        "client_id":    graphClient.ClientID,
+        "user_id":      graphClient.UserID,
+        "token_valid":  token != "",
+        "api_response": result,
+    })
+}
+
 // ====== main ======
 
 func main() {
+    // Initialize Microsoft Graph API client
+    initGraphClient()
+
+    // Log SMTP configuration
+    smtpHost := os.Getenv("SMTP_HOST")
+    smtpPort := os.Getenv("SMTP_PORT")
+    smtpUser := os.Getenv("SMTP_USER")
+    if smtpHost != "" && smtpPort != "" && smtpUser != "" {
+        log.Printf("✅ SMTP configured: %s:%s (user: %s)", smtpHost, smtpPort, smtpUser)
+    } else {
+        log.Printf("⚠️  SMTP not fully configured")
+    }
+
     http.HandleFunc("/health", healthHandler)
 
     http.HandleFunc("/api/generate-timecard", func(w http.ResponseWriter, r *http.Request) {
@@ -787,6 +1076,7 @@ func main() {
     })
 
     http.HandleFunc("/test/libreoffice", testLibreOfficeHandler)
+    http.HandleFunc("/test/graph-api", testGraphAPIHandler)
 
     port := os.Getenv("PORT")
     if port == "" {
