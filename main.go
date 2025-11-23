@@ -5,10 +5,12 @@ import (
     "encoding/base64"
     "encoding/json"
     "fmt"
+    "io/ioutil"
     "log"
     "net/http"
     "net/smtp"
     "os"
+    "os/exec"
     "strings"
     "time"
 
@@ -68,6 +70,7 @@ func main() {
     // API endpoints
     http.HandleFunc("/api/generate-timecard", corsMiddleware(generateTimecardHandler))
     http.HandleFunc("/api/email-timecard", corsMiddleware(emailTimecardHandler))
+    http.HandleFunc("/api/preview-timecard", corsMiddleware(previewTimecardHandler))
 
     log.Printf("Server starting on port %s", port)
     if err := http.ListenAndServe(":"+port, nil); err != nil {
@@ -169,6 +172,149 @@ func emailTimecardHandler(w http.ResponseWriter, r *http.Request) {
     json.NewEncoder(w).Encode(response)
 
     log.Printf("Email sent successfully to %s", req.To)
+}
+
+func previewTimecardHandler(w http.ResponseWriter, r *http.Request) {
+    if r.Method != http.MethodPost {
+        http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+        return
+    }
+
+    var req TimecardRequest
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        log.Printf("Error decoding request: %v", err)
+        http.Error(w, fmt.Sprintf("Invalid request: %v", err), http.StatusBadRequest)
+        return
+    }
+
+    log.Printf("Generating preview for %s", req.EmployeeName)
+
+    // Generate Excel file
+    excelData, err := generateExcelFile(req)
+    if err != nil {
+        log.Printf("Error generating Excel: %v", err)
+        http.Error(w, fmt.Sprintf("Error generating preview: %v", err), http.StatusInternalServerError)
+        return
+    }
+
+    log.Printf("Generated Excel file (%d bytes) for preview", len(excelData))
+
+    // Convert to PNG images (one for each sheet/week)
+    images, err := convertExcelToPNG(excelData)
+    if err != nil {
+        log.Printf("Error converting to image: %v", err)
+        http.Error(w, fmt.Sprintf("Error generating preview: %v", err), http.StatusInternalServerError)
+        return
+    }
+
+    // Return JSON with base64-encoded images
+    type PreviewResponse struct {
+        Week1Image string `json:"week1_image"`
+        Week2Image string `json:"week2_image,omitempty"`
+    }
+
+    response := PreviewResponse{
+        Week1Image: base64.StdEncoding.EncodeToString(images[0]),
+    }
+    if len(images) > 1 {
+        response.Week2Image = base64.StdEncoding.EncodeToString(images[1])
+    }
+
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(response)
+
+    log.Printf("Successfully generated preview with %d image(s)", len(images))
+}
+
+// convertExcelToPNG converts Excel bytes to PNG image(s)
+// Returns one PNG per sheet (Week 1 and Week 2)
+func convertExcelToPNG(excelData []byte) ([][]byte, error) {
+    // Create temporary directory
+    tmpDir, err := ioutil.TempDir("", "excel-preview-")
+    if err != nil {
+        return nil, fmt.Errorf("failed to create temp dir: %v", err)
+    }
+    defer os.RemoveAll(tmpDir)
+
+    log.Printf("Using temp directory: %s", tmpDir)
+
+    // Write Excel to temp file
+    excelPath := tmpDir + "/timecard.xlsx"
+    if err := ioutil.WriteFile(excelPath, excelData, 0644); err != nil {
+        return nil, fmt.Errorf("failed to write Excel file: %v", err)
+    }
+
+    log.Printf("Wrote Excel file to: %s", excelPath)
+
+    // Convert Excel to PDF using LibreOffice
+    log.Printf("Converting Excel to PDF...")
+    cmd := exec.Command("libreoffice", "--headless", "--convert-to", "pdf", "--outdir", tmpDir, excelPath)
+    output, err := cmd.CombinedOutput()
+    if err != nil {
+        return nil, fmt.Errorf("failed to convert Excel to PDF: %v (output: %s)", err, string(output))
+    }
+
+    pdfPath := tmpDir + "/timecard.pdf"
+    log.Printf("Created PDF at: %s", pdfPath)
+
+    // Check if PDF was created
+    if _, err := os.Stat(pdfPath); os.IsNotExist(err) {
+        return nil, fmt.Errorf("PDF file was not created")
+    }
+
+    // Convert PDF pages to PNG using ImageMagick
+    // [0] = first page (Week 1), [1] = second page (Week 2)
+    log.Printf("Converting PDF to PNG images...")
+    pngPath := tmpDir + "/timecard.png"
+    cmd = exec.Command("convert", 
+        "-density", "150",      // DPI (higher = better quality, but larger file)
+        "-quality", "90",       // JPEG quality if applicable
+        pdfPath,                // Input PDF (all pages)
+        pngPath,                // Output PNG pattern
+    )
+    output, err = cmd.CombinedOutput()
+    if err != nil {
+        return nil, fmt.Errorf("failed to convert PDF to PNG: %v (output: %s)", err, string(output))
+    }
+
+    // Read generated PNG files
+    // ImageMagick creates timecard-0.png, timecard-1.png, etc. for multi-page PDFs
+    // Or just timecard.png for single page
+    var images [][]byte
+
+    // Try reading multi-page format first
+    for i := 0; i < 2; i++ {
+        var imagePath string
+        if i == 0 {
+            // First try single-page format
+            if _, err := os.Stat(tmpDir + "/timecard.png"); err == nil {
+                imagePath = tmpDir + "/timecard.png"
+            } else {
+                imagePath = fmt.Sprintf("%s/timecard-%d.png", tmpDir, i)
+            }
+        } else {
+            imagePath = fmt.Sprintf("%s/timecard-%d.png", tmpDir, i)
+        }
+
+        imageData, err := ioutil.ReadFile(imagePath)
+        if err != nil {
+            if i == 0 {
+                return nil, fmt.Errorf("failed to read first PNG: %v", err)
+            }
+            // No second page - that's ok
+            log.Printf("Only one page generated")
+            break
+        }
+
+        images = append(images, imageData)
+        log.Printf("Read image %d: %d bytes", i+1, len(imageData))
+    }
+
+    if len(images) == 0 {
+        return nil, fmt.Errorf("no PNG images were generated")
+    }
+
+    return images, nil
 }
 
 func generateExcelFile(req TimecardRequest) ([]byte, error) {
