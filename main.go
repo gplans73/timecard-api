@@ -556,9 +556,13 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 
             if job != nil {
                 // Write the CODE (from JobName) to CODE column
+                // Special case: If JobName OR JobCode is "OC", write "On Call" instead (for Excel formula detection)
                 // Add "N" prefix to the CODE if it was a night shift
                 codeToWrite := job.JobName // e.g., "201"
-                if isNightShift {
+                if job.JobName == "OC" || job.JobCode == "OC" {
+                    codeToWrite = "On Call"
+                    log.Printf("  Special case: Converting OC to 'On Call' for overtime (JobName='%s', JobCode='%s')", job.JobName, job.JobCode)
+                } else if isNightShift {
                     codeToWrite = "N" + job.JobName // e.g., "N201"
                 }
                 f.SetCellValue(sheetName, codeColumns[i]+"15", codeToWrite)
@@ -571,7 +575,10 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
                 log.Printf("  WARNING: Could not resolve job '%s' (by number or code)", actualJobNumber)
                 // Can't find the job - write the job number to CODE column with "N" prefix if night shift
                 codeToWrite := actualJobNumber
-                if isNightShift {
+                if codeToWrite == "OC" {
+                    codeToWrite = "On Call"
+                    log.Printf("  Special case: Converting OC to 'On Call' for overtime (unresolved job)")
+                } else if isNightShift {
                     codeToWrite = "N" + actualJobNumber
                 }
                 f.SetCellValue(sheetName, codeColumns[i]+"15", codeToWrite)
