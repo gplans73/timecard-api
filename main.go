@@ -19,14 +19,16 @@ import (
 
 // TimecardRequest matches the Swift GoTimecardRequest structure
 type TimecardRequest struct {
-    EmployeeName     string      `json:"employee_name"`
-    PayPeriodNum     int         `json:"pay_period_num"`
-    Year             int         `json:"year"`
-    WeekStartDate    string      `json:"week_start_date"`
-    WeekNumberLabel  string      `json:"week_number_label"`
-    Jobs             []Job       `json:"jobs"`
-    Entries          []Entry     `json:"entries"`
-    Weeks            []WeekData  `json:"weeks,omitempty"`
+    EmployeeName        string      `json:"employee_name"`
+    PayPeriodNum        int         `json:"pay_period_num"`
+    Year                int         `json:"year"`
+    WeekStartDate       string      `json:"week_start_date"`
+    WeekNumberLabel     string      `json:"week_number_label"`
+    Jobs                []Job       `json:"jobs"`
+    Entries             []Entry     `json:"entries"`
+    Weeks               []WeekData  `json:"weeks,omitempty"`
+    OnCallStipend       float64     `json:"on_call_stipend,omitempty"`
+    OnCallOccurrences   float64     `json:"on_call_occurrences,omitempty"`
 }
 
 type Job struct {
@@ -43,10 +45,12 @@ type Entry struct {
 }
 
 type WeekData struct {
-    WeekNumber    int     `json:"week_number"`
-    WeekStartDate string  `json:"week_start_date"`
-    WeekLabel     string  `json:"week_label"`
-    Entries       []Entry `json:"entries"`
+    WeekNumber          int     `json:"week_number"`
+    WeekStartDate       string  `json:"week_start_date"`
+    WeekLabel           string  `json:"week_label"`
+    Entries             []Entry `json:"entries"`
+    OnCallStipend       float64 `json:"on_call_stipend,omitempty"`
+    OnCallOccurrences   float64 `json:"on_call_occurrences,omitempty"`
 }
 
 // EmailTimecardRequest for email endpoint
@@ -434,6 +438,19 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 
     // Set week number label
     f.SetCellValue(sheetName, "AJ4", weekData.WeekLabel)
+
+    // Fill On Call bonus values if present (Office Use Only section)
+    // Note: You'll need to replace these cell references with the actual cells from your template
+    if weekData.OnCallStipend > 0 {
+        // TODO: Replace "XX25" with actual cell reference for On Call Stipend (e.g., "AK25")
+        f.SetCellValue(sheetName, "AK25", weekData.OnCallStipend)
+        log.Printf("Set On Call Stipend: $%.2f at cell AK25", weekData.OnCallStipend)
+    }
+    if weekData.OnCallOccurrences > 0 {
+        // TODO: Replace "XX26" with actual cell reference for On Call Occurrences (e.g., "AM26")
+        f.SetCellValue(sheetName, "AM26", weekData.OnCallOccurrences)
+        log.Printf("Set On Call Occurrences: $%.2f at cell AM26", weekData.OnCallOccurrences)
+    }
 
     // CRITICAL: CODE columns (C,E,G,I,K...) for job CODES and HOURS
     //           JOB columns (D,F,H,J,L...) for job NAMES/NUMBERS
