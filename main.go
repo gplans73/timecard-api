@@ -1,4 +1,4 @@
-package main 
+package main
 
 import (
     "bytes"
@@ -439,18 +439,10 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
     // Set week number label
     f.SetCellValue(sheetName, "AJ4", weekData.WeekLabel)
 
-    // Fill On Call bonus values if present (Office Use Only section)
-    // Note: You'll need to replace these cell references with the actual cells from your template
-    if weekData.OnCallStipend > 0 {
-        // TODO: Replace "XX25" with actual cell reference for On Call Stipend (e.g., "AK25")
-        f.SetCellValue(sheetName, "AK25", weekData.OnCallStipend)
-        log.Printf("Set On Call Stipend: $%.2f at cell AK25", weekData.OnCallStipend)
-    }
-    if weekData.OnCallOccurrences > 0 {
-        // TODO: Replace "XX26" with actual cell reference for On Call Occurrences (e.g., "AM26")
-        f.SetCellValue(sheetName, "AM26", weekData.OnCallOccurrences)
-        log.Printf("Set On Call Occurrences: $%.2f at cell AM26", weekData.OnCallOccurrences)
-    }
+    // NOTE: On-call bonuses ($300 and $50) are calculated automatically by Excel formulas
+    // in the "Office Use Only" section when "On Call" appears in Row 15 Code columns.
+    // We just need to write "On Call" (not "OC") in the overtime Code column (Row 15).
+    log.Printf("On-call data received: Stipend=%.2f, Occurrences=%.2f (will be auto-calculated by template)", weekData.OnCallStipend, weekData.OnCallOccurrences)
 
     // CRITICAL: CODE columns (C,E,G,I,K...) for job CODES and HOURS
     //           JOB columns (D,F,H,J,L...) for job NAMES/NUMBERS
