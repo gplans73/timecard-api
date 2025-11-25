@@ -5,12 +5,10 @@ import (
     "encoding/base64"
     "encoding/json"
     "fmt"
-    "io/ioutil"
     "log"
     "net/http"
     "net/smtp"
     "os"
-    "os/exec"
     "strings"
     "time"
 
@@ -19,16 +17,14 @@ import (
 
 // TimecardRequest matches the Swift GoTimecardRequest structure
 type TimecardRequest struct {
-    EmployeeName        string      `json:"employee_name"`
-    PayPeriodNum        int         `json:"pay_period_num"`
-    Year                int         `json:"year"`
-    WeekStartDate       string      `json:"week_start_date"`
-    WeekNumberLabel     string      `json:"week_number_label"`
-    Jobs                []Job       `json:"jobs"`
-    Entries             []Entry     `json:"entries"`
-    Weeks               []WeekData  `json:"weeks,omitempty"`
-    OnCallStipend       float64     `json:"on_call_stipend,omitempty"`
-    OnCallOccurrences   float64     `json:"on_call_occurrences,omitempty"`
+    EmployeeName     string      `json:"employee_name"`
+    PayPeriodNum     int         `json:"pay_period_num"`
+    Year             int         `json:"year"`
+    WeekStartDate    string      `json:"week_start_date"`
+    WeekNumberLabel  string      `json:"week_number_label"`
+    Jobs             []Job       `json:"jobs"`
+    Entries          []Entry     `json:"entries"`
+    Weeks            []WeekData  `json:"weeks,omitempty"`
 }
 
 type Job struct {
@@ -45,12 +41,10 @@ type Entry struct {
 }
 
 type WeekData struct {
-    WeekNumber          int     `json:"week_number"`
-    WeekStartDate       string  `json:"week_start_date"`
-    WeekLabel           string  `json:"week_label"`
-    Entries             []Entry `json:"entries"`
-    OnCallStipend       float64 `json:"on_call_stipend,omitempty"`
-    OnCallOccurrences   float64 `json:"on_call_occurrences,omitempty"`
+    WeekNumber    int     `json:"week_number"`
+    WeekStartDate string  `json:"week_start_date"`
+    WeekLabel     string  `json:"week_label"`
+    Entries       []Entry `json:"entries"`
 }
 
 // EmailTimecardRequest for email endpoint
@@ -74,7 +68,6 @@ func main() {
     // API endpoints
     http.HandleFunc("/api/generate-timecard", corsMiddleware(generateTimecardHandler))
     http.HandleFunc("/api/email-timecard", corsMiddleware(emailTimecardHandler))
-    http.HandleFunc("/api/preview-timecard", corsMiddleware(previewTimecardHandler))
 
     log.Printf("Server starting on port %s", port)
     if err := http.ListenAndServe(":"+port, nil); err != nil {
@@ -116,6 +109,19 @@ func generateTimecardHandler(w http.ResponseWriter, r *http.Request) {
     }
 
     log.Printf("Generating timecard for %s", req.EmployeeName)
+    
+    // Debug: Log all received data
+    log.Printf("=== REQUEST DEBUG ===")
+    log.Printf("Jobs received: %d", len(req.Jobs))
+    for _, job := range req.Jobs {
+        log.Printf("  Job: number='%s', code='%s'", job.JobCode, job.JobName)
+    }
+    log.Printf("Entries received: %d", len(req.Entries))
+    for _, entry := range req.Entries {
+        log.Printf("  Entry: date=%s, jobCode='%s', hours=%.1f, overtime=%v, nightShift=%v", 
+            entry.Date, entry.JobCode, entry.Hours, entry.Overtime, entry.IsNightShift)
+    }
+    log.Printf("===================")
 
     // Generate Excel file
     excelData, err := generateExcelFile(req)
@@ -176,149 +182,6 @@ func emailTimecardHandler(w http.ResponseWriter, r *http.Request) {
     json.NewEncoder(w).Encode(response)
 
     log.Printf("Email sent successfully to %s", req.To)
-}
-
-func previewTimecardHandler(w http.ResponseWriter, r *http.Request) {
-    if r.Method != http.MethodPost {
-        http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-        return
-    }
-
-    var req TimecardRequest
-    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-        log.Printf("Error decoding request: %v", err)
-        http.Error(w, fmt.Sprintf("Invalid request: %v", err), http.StatusBadRequest)
-        return
-    }
-
-    log.Printf("Generating preview for %s", req.EmployeeName)
-
-    // Generate Excel file
-    excelData, err := generateExcelFile(req)
-    if err != nil {
-        log.Printf("Error generating Excel: %v", err)
-        http.Error(w, fmt.Sprintf("Error generating preview: %v", err), http.StatusInternalServerError)
-        return
-    }
-
-    log.Printf("Generated Excel file (%d bytes) for preview", len(excelData))
-
-    // Convert to PNG images (one for each sheet/week)
-    images, err := convertExcelToPNG(excelData)
-    if err != nil {
-        log.Printf("Error converting to image: %v", err)
-        http.Error(w, fmt.Sprintf("Error generating preview: %v", err), http.StatusInternalServerError)
-        return
-    }
-
-    // Return JSON with base64-encoded images
-    type PreviewResponse struct {
-        Week1Image string `json:"week1_image"`
-        Week2Image string `json:"week2_image,omitempty"`
-    }
-
-    response := PreviewResponse{
-        Week1Image: base64.StdEncoding.EncodeToString(images[0]),
-    }
-    if len(images) > 1 {
-        response.Week2Image = base64.StdEncoding.EncodeToString(images[1])
-    }
-
-    w.Header().Set("Content-Type", "application/json")
-    json.NewEncoder(w).Encode(response)
-
-    log.Printf("Successfully generated preview with %d image(s)", len(images))
-}
-
-// convertExcelToPNG converts Excel bytes to PNG image(s)
-// Returns one PNG per sheet (Week 1 and Week 2)
-func convertExcelToPNG(excelData []byte) ([][]byte, error) {
-    // Create temporary directory
-    tmpDir, err := ioutil.TempDir("", "excel-preview-")
-    if err != nil {
-        return nil, fmt.Errorf("failed to create temp dir: %v", err)
-    }
-    defer os.RemoveAll(tmpDir)
-
-    log.Printf("Using temp directory: %s", tmpDir)
-
-    // Write Excel to temp file
-    excelPath := tmpDir + "/timecard.xlsx"
-    if err := ioutil.WriteFile(excelPath, excelData, 0644); err != nil {
-        return nil, fmt.Errorf("failed to write Excel file: %v", err)
-    }
-
-    log.Printf("Wrote Excel file to: %s", excelPath)
-
-    // Convert Excel to PDF using LibreOffice
-    log.Printf("Converting Excel to PDF...")
-    cmd := exec.Command("libreoffice", "--headless", "--convert-to", "pdf", "--outdir", tmpDir, excelPath)
-    output, err := cmd.CombinedOutput()
-    if err != nil {
-        return nil, fmt.Errorf("failed to convert Excel to PDF: %v (output: %s)", err, string(output))
-    }
-
-    pdfPath := tmpDir + "/timecard.pdf"
-    log.Printf("Created PDF at: %s", pdfPath)
-
-    // Check if PDF was created
-    if _, err := os.Stat(pdfPath); os.IsNotExist(err) {
-        return nil, fmt.Errorf("PDF file was not created")
-    }
-
-    // Convert PDF pages to PNG using ImageMagick
-    // [0] = first page (Week 1), [1] = second page (Week 2)
-    log.Printf("Converting PDF to PNG images...")
-    pngPath := tmpDir + "/timecard.png"
-    cmd = exec.Command("convert", 
-        "-density", "150",      // DPI (higher = better quality, but larger file)
-        "-quality", "90",       // JPEG quality if applicable
-        pdfPath,                // Input PDF (all pages)
-        pngPath,                // Output PNG pattern
-    )
-    output, err = cmd.CombinedOutput()
-    if err != nil {
-        return nil, fmt.Errorf("failed to convert PDF to PNG: %v (output: %s)", err, string(output))
-    }
-
-    // Read generated PNG files
-    // ImageMagick creates timecard-0.png, timecard-1.png, etc. for multi-page PDFs
-    // Or just timecard.png for single page
-    var images [][]byte
-
-    // Try reading multi-page format first
-    for i := 0; i < 2; i++ {
-        var imagePath string
-        if i == 0 {
-            // First try single-page format
-            if _, err := os.Stat(tmpDir + "/timecard.png"); err == nil {
-                imagePath = tmpDir + "/timecard.png"
-            } else {
-                imagePath = fmt.Sprintf("%s/timecard-%d.png", tmpDir, i)
-            }
-        } else {
-            imagePath = fmt.Sprintf("%s/timecard-%d.png", tmpDir, i)
-        }
-
-        imageData, err := ioutil.ReadFile(imagePath)
-        if err != nil {
-            if i == 0 {
-                return nil, fmt.Errorf("failed to read first PNG: %v", err)
-            }
-            // No second page - that's ok
-            log.Printf("Only one page generated")
-            break
-        }
-
-        images = append(images, imageData)
-        log.Printf("Read image %d: %d bytes", i+1, len(imageData))
-    }
-
-    if len(images) == 0 {
-        return nil, fmt.Errorf("no PNG images were generated")
-    }
-
-    return images, nil
 }
 
 func generateExcelFile(req TimecardRequest) ([]byte, error) {
@@ -439,11 +302,6 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
     // Set week number label
     f.SetCellValue(sheetName, "AJ4", weekData.WeekLabel)
 
-    // NOTE: On-call bonuses ($300 and $50) are calculated automatically by Excel formulas
-    // in the "Office Use Only" section when "On Call" appears in Row 15 Code columns.
-    // We just need to write "On Call" (not "OC") in the overtime Code column (Row 15).
-    log.Printf("On-call data received: Stipend=%.2f, Occurrences=%.2f (will be auto-calculated by template)", weekData.OnCallStipend, weekData.OnCallOccurrences)
-
     // CRITICAL: CODE columns (C,E,G,I,K...) for job CODES and HOURS
     //           JOB columns (D,F,H,J,L...) for job NAMES/NUMBERS
     codeColumns := []string{"C", "E", "G", "I", "K", "M", "O", "Q", "S", "U", "W", "Y", "AA", "AC", "AE", "AG"}
@@ -504,39 +362,32 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 
             if job != nil {
                 // Write the CODE (from JobName) to CODE column
-                // Special case: If JobName OR JobCode is "OC", write "On Call" instead
                 // Add "N" prefix to the CODE if it was a night shift
                 codeCellRef := codeColumns[i] + "4"
                 codeToWrite := job.JobName // e.g., "201"
-                
-                log.Printf("  🔍 Checking regular job: JobName='%s', JobCode='%s', actualJobNumber='%s'", job.JobName, job.JobCode, actualJobNumber)
-                
-                if job.JobName == "OC" || job.JobCode == "OC" {
-                    codeToWrite = "On Call"
-                    log.Printf("  ✅ ✅ ✅ CONVERTED OC to 'On Call' for regular time! ✅ ✅ ✅")
-                } else if isNightShift {
+                if isNightShift {
                     codeToWrite = "N" + job.JobName // e.g., "N201"
                 }
                 f.SetCellValue(sheetName, codeCellRef, codeToWrite)
                 writtenValue, _ := f.GetCellValue(sheetName, codeCellRef)
-                log.Printf("  Wrote code to %s: '%s', verified: '%s'", codeCellRef, codeToWrite, writtenValue)
+                log.Printf("  REG: Wrote code to %s: '%s' (night=%v), verified: '%s'", codeCellRef, codeToWrite, isNightShift, writtenValue)
 
                 // Write the NUMBER (from JobCode) to JOB column (no "N" prefix on number)
                 jobCellRef := jobColumns[i] + "4"
                 f.SetCellValue(sheetName, jobCellRef, job.JobCode)
                 writtenJobValue, _ := f.GetCellValue(sheetName, jobCellRef)
-                log.Printf("  Wrote job# to %s: '%s', verified: '%s'", jobCellRef, job.JobCode, writtenJobValue)
+                log.Printf("  REG: Wrote job# to %s: '%s', verified: '%s'", jobCellRef, job.JobCode, writtenJobValue)
             } else {
-                log.Printf("  WARNING: Could not resolve job '%s' (by number or code)", actualJobNumber)
+                log.Printf("  REG WARNING: Could not resolve job '%s' (key='%s', night=%v)", actualJobNumber, jobNumberKey, isNightShift)
+                log.Printf("  REG WARNING: Available jobs by number: %v", getMapKeys(jobByNumber))
+                log.Printf("  REG WARNING: Available jobs by code: %v", getMapKeys(jobByCode))
                 // Can't find the job - write the job number to CODE column with "N" prefix if night shift
                 codeToWrite := actualJobNumber
-                if codeToWrite == "OC" {
-                    codeToWrite = "On Call"
-                    log.Printf("  Special case: Converting OC to 'On Call' for regular time (unresolved job)")
-                } else if isNightShift {
+                if isNightShift {
                     codeToWrite = "N" + actualJobNumber
                 }
                 f.SetCellValue(sheetName, codeColumns[i]+"4", codeToWrite)
+                log.Printf("  REG WARNING: Wrote fallback code to %s4: '%s'", codeColumns[i], codeToWrite)
             }
         }
     }
@@ -575,35 +426,28 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 
             if job != nil {
                 // Write the CODE (from JobName) to CODE column
-                // Special case: If JobName OR JobCode is "OC", write "On Call" instead (for Excel formula detection)
                 // Add "N" prefix to the CODE if it was a night shift
                 codeToWrite := job.JobName // e.g., "201"
-                
-                log.Printf("  🔍 Checking OT job: JobName='%s', JobCode='%s', actualJobNumber='%s'", job.JobName, job.JobCode, actualJobNumber)
-                
-                if job.JobName == "OC" || job.JobCode == "OC" {
-                    codeToWrite = "On Call"
-                    log.Printf("  ✅ ✅ ✅ CONVERTED OC to 'On Call' for overtime! ✅ ✅ ✅")
-                } else if isNightShift {
+                if isNightShift {
                     codeToWrite = "N" + job.JobName // e.g., "N201"
                 }
                 f.SetCellValue(sheetName, codeColumns[i]+"15", codeToWrite)
-                log.Printf("  📝 Writing OT code to %s15: '%s' (FINAL VALUE)", codeColumns[i], codeToWrite)
+                log.Printf("  OT: Wrote code to %s15: '%s' (night=%v)", codeColumns[i], codeToWrite, isNightShift)
 
                 // Write the NUMBER (from JobCode) to JOB column (no "N" prefix on number)
                 f.SetCellValue(sheetName, jobColumns[i]+"15", job.JobCode)
-                log.Printf("  Writing OT job# to %s15: '%s' (looked up by number '%s')", jobColumns[i], job.JobCode, actualJobNumber)
+                log.Printf("  OT: Wrote job# to %s15: '%s' (looked up by number '%s')", jobColumns[i], job.JobCode, actualJobNumber)
             } else {
-                log.Printf("  WARNING: Could not resolve job '%s' (by number or code)", actualJobNumber)
+                log.Printf("  OT WARNING: Could not resolve job '%s' (key='%s', night=%v)", actualJobNumber, jobNumberKey, isNightShift)
+                log.Printf("  OT WARNING: Available jobs by number: %v", getMapKeys(jobByNumber))
+                log.Printf("  OT WARNING: Available jobs by code: %v", getMapKeys(jobByCode))
                 // Can't find the job - write the job number to CODE column with "N" prefix if night shift
                 codeToWrite := actualJobNumber
-                if codeToWrite == "OC" {
-                    codeToWrite = "On Call"
-                    log.Printf("  Special case: Converting OC to 'On Call' for overtime (unresolved job)")
-                } else if isNightShift {
+                if isNightShift {
                     codeToWrite = "N" + actualJobNumber
                 }
                 f.SetCellValue(sheetName, codeColumns[i]+"15", codeToWrite)
+                log.Printf("  OT WARNING: Wrote fallback code to %s15: '%s'", codeColumns[i], codeToWrite)
             }
         }
     }
@@ -622,16 +466,24 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 
         dateKey := entryDate.Format("2006-01-02")
 
+        // Log each entry being processed
+        log.Printf("  Processing entry: date=%s, jobCode='%s', hours=%.1f, OT=%v, night=%v", 
+            dateKey, entry.JobCode, entry.Hours, entry.Overtime, entry.IsNightShift)
+
         // Normalize: entry.JobCode may be a NUMBER or a CODE; translate to job NUMBER for keys
         normalizedNumber := entry.JobCode
         if _, ok := jobByNumber[normalizedNumber]; !ok {
             if j, ok2 := jobByCode[normalizedNumber]; ok2 {
                 normalizedNumber = j.JobCode
+                log.Printf("    Normalized '%s' (code) -> '%s' (number)", entry.JobCode, normalizedNumber)
+            } else {
+                log.Printf("    WARNING: Job '%s' not found in jobByNumber or jobByCode maps!", entry.JobCode)
             }
         }
         jobNumberKey := normalizedNumber
         if entry.IsNightShift {
             jobNumberKey = "N-" + normalizedNumber
+            log.Printf("    Night shift detected: key='%s'", jobNumberKey)
         }
 
         if entry.Overtime {
@@ -639,13 +491,13 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
                 overtimeEntries[dateKey] = make(map[string]float64)
             }
             overtimeEntries[dateKey][jobNumberKey] += entry.Hours
-            log.Printf("  OT entry: %s, Job %s, Hours %.1f", dateKey, jobNumberKey, entry.Hours)
+            log.Printf("  OT entry stored: %s, Job %s, Hours %.1f", dateKey, jobNumberKey, entry.Hours)
         } else {
             if regularTimeEntries[dateKey] == nil {
                 regularTimeEntries[dateKey] = make(map[string]float64)
             }
             regularTimeEntries[dateKey][jobNumberKey] += entry.Hours
-            log.Printf("  REG entry: %s, Job %s, Hours %.1f", dateKey, jobNumberKey, entry.Hours)
+            log.Printf("  REG entry stored: %s, Job %s, Hours %.1f", dateKey, jobNumberKey, entry.Hours)
         }
     }
 
