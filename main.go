@@ -423,13 +423,14 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
         f.SetCellValue(sheetName, fmt.Sprintf("B%d", overtimeRow), excelDateSerial)
 
         // Fill regular time hours
+        // IMPORTANT: Hours are written to jobColumns (D, F, H...), NOT codeColumns (C, E, G...)
         if regularHours, exists := regularTimeEntries[dateKey]; exists {
             for i, k := range regularCols {
-                if i >= len(codeColumns) {
+                if i >= len(jobColumns) {
                     break
                 }
                 if hours, hasHours := regularHours[k]; hasHours && hours > 0 {
-                    cellRef := fmt.Sprintf("%s%d", codeColumns[i], regularRow)
+                    cellRef := fmt.Sprintf("%s%d", jobColumns[i], regularRow)
                     f.SetCellValue(sheetName, cellRef, hours)
                     log.Printf("    Writing REG: %s = %.2f (key %s)", cellRef, hours, k)
                 }
@@ -437,13 +438,14 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
         }
 
         // Fill overtime hours
+        // IMPORTANT: Hours are written to jobColumns (D, F, H...), NOT codeColumns (C, E, G...)
         if otHours, exists := overtimeEntries[dateKey]; exists {
             for i, k := range overtimeCols {
-                if i >= len(codeColumns) {
+                if i >= len(jobColumns) {
                     break
                 }
                 if hours, hasHours := otHours[k]; hasHours && hours > 0 {
-                    cellRef := fmt.Sprintf("%s%d", codeColumns[i], overtimeRow)
+                    cellRef := fmt.Sprintf("%s%d", jobColumns[i], overtimeRow)
                     f.SetCellValue(sheetName, cellRef, hours)
                     log.Printf("    Writing OT: %s = %.2f (key %s)", cellRef, hours, k)
                 }
