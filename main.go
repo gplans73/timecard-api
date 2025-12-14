@@ -25,16 +25,24 @@ type TimecardRequest struct {
     Jobs             []Job       `json:"jobs"`
     Entries          []Entry     `json:"entries"`
     Weeks            []WeekData  `json:"weeks,omitempty"`
+    LabourCodes     []LabourCode `json:"labour_codes,omitempty"`
 }
+
 
 type Job struct {
     JobCode string `json:"job_code"`
     JobName string `json:"job_name"`
 }
 
+type LabourCode struct {
+    Code string `json:"code"`
+    Name string `json:"name"`
+}
+
 type Entry struct {
-    Date        string  `json:"date"`
-    JobCode     string  `json:"job_code"`
+    Date         string  `json:"date"`
+    JobCode      string  `json:"job_code"`
+    LabourCode   string  `json:"labour_code"`
     Hours       float64 `json:"hours"`
     Overtime    bool    `json:"overtime"`
     IsNightShift bool   `json:"is_night_shift"`
@@ -118,8 +126,8 @@ func generateTimecardHandler(w http.ResponseWriter, r *http.Request) {
     }
     log.Printf("Entries received: %d", len(req.Entries))
     for _, entry := range req.Entries {
-        log.Printf("  Entry: date=%s, jobCode='%s', hours=%.1f, overtime=%v, nightShift=%v", 
-            entry.Date, entry.JobCode, entry.Hours, entry.Overtime, entry.IsNightShift)
+        log.Printf("  Entry: date=%s, jobCode='%s', labourCode='%s', hours=%.1f, overtime=%v, nightShift=%v", 
+            entry.Date, entry.JobCode, entry.LabourCode, entry.Hours, entry.Overtime, entry.IsNightShift)
     }
     log.Printf("===================")
 
@@ -302,160 +310,70 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
     // Set week number label
     f.SetCellValue(sheetName, "AJ4", weekData.WeekLabel)
 
-    // CRITICAL: CODE columns (C,E,G,I,K...) for job CODES and HOURS
-    //           JOB columns (D,F,H,J,L...) for job NAMES/NUMBERS
+    // Template layout:
+    //   - CODE columns (C,E,G,...) are the "Labour Codes" header cells AND the hour-entry cells.
+    //   - JOB columns  (D,F,H,...) are the "Job" header cells (job number).
     codeColumns := []string{"C", "E", "G", "I", "K", "M", "O", "Q", "S", "U", "W", "Y", "AA", "AC", "AE", "AG"}
     jobColumns := []string{"D", "F", "H", "J", "L", "N", "P", "R", "T", "V", "X", "Z", "AB", "AD", "AF", "AH"}
 
-    // Build maps for job lookup by NUMBER (JobCode) and by CODE (JobName)
-    jobByNumber := make(map[string]*Job)
-    jobByCode := make(map[string]*Job)
-    for i := range req.Jobs {
-        j := &req.Jobs[i]
-        if j.JobCode != "" {
-            jobByNumber[j.JobCode] = j
-        }
-        if j.JobName != "" {
-            jobByCode[j.JobName] = j
-        }
-        log.Printf("Adding job: number='%s', code='%s'", j.JobCode, j.JobName)
+    // IMPORTANT: columns must be keyed by (job_code + labour_code) so that:
+    //   job 92408 + labour 227 is a DIFFERENT column than job 92408 + labour 206
+    // Night shift is treated as a separate column by prefixing with "N-".
+    regularCols := getUniqueColumnsForType(weekData.Entries, false)
+    overtimeCols := getUniqueColumnsForType(weekData.Entries, true)
+
+    log.Printf("Regular columns: %v", regularCols)
+    log.Printf("Overtime columns: %v", overtimeCols)
+
+    // ---- REGULAR TIME HEADERS (Row 4) ----
+    for i := 0; i < len(regularCols) && i < len(codeColumns); i++ {
+        f.SetCellValue(sheetName, codeColumns[i]+"4", "")
+        f.SetCellValue(sheetName, jobColumns[i]+"4", "")
     }
 
-    // Get separate job code lists for regular time and overtime
-    regularJobCodes := getUniqueJobCodesForType(weekData.Entries, false) // regular time only
-    overtimeJobCodes := getUniqueJobCodesForType(weekData.Entries, true) // overtime only
-
-    log.Printf("Regular job codes: %v", regularJobCodes)
-    log.Printf("Overtime job codes: %v", overtimeJobCodes)
-
-    // Fill REGULAR TIME headers (Row 4) - only if there are regular jobs
-    if len(regularJobCodes) > 0 {
-        // Clear placeholder text from regular job columns that will be used
-        for i := 0; i < len(regularJobCodes) && i < len(codeColumns); i++ {
-            f.SetCellValue(sheetName, codeColumns[i]+"4", "")
-            f.SetCellValue(sheetName, jobColumns[i]+"4", "")
+    for i, colKey := range regularCols {
+        if i >= len(codeColumns) {
+            log.Printf("Warning: More than %d regular columns, truncating", len(codeColumns))
+            break
         }
+        isNight, job, labour := splitColumnKey(colKey)
 
-        // Fill regular job headers (Row 4)
-        for i, jobNumberKey := range regularJobCodes {
-            if i >= len(codeColumns) {
-                log.Printf("Warning: More than %d regular jobs, truncating", len(codeColumns))
-                break
-            }
-
-            // Remove "N-" prefix from night shift entries to look up the job
-            actualJobNumber := jobNumberKey
-            isNightShift := strings.HasPrefix(jobNumberKey, "N-")
-            if isNightShift {
-                actualJobNumber = strings.TrimPrefix(jobNumberKey, "N-")
-            }
-
-            var job *Job
-            // First assume actualJobNumber is a NUMBER
-            if j, ok := jobByNumber[actualJobNumber]; ok {
-                job = j
-            } else if j, ok := jobByCode[actualJobNumber]; ok {
-                // If it's actually a CODE, use that and normalize the number from the job
-                job = j
-                actualJobNumber = j.JobCode
-            }
-
-            if job != nil {
-                // Write the CODE (from JobName) to CODE column
-                // Add "N" prefix to the CODE if it was a night shift
-                codeCellRef := codeColumns[i] + "4"
-                codeToWrite := job.JobName // e.g., "201"
-                if isNightShift {
-                    codeToWrite = "N" + job.JobName // e.g., "N201"
-                }
-                f.SetCellValue(sheetName, codeCellRef, codeToWrite)
-                writtenValue, _ := f.GetCellValue(sheetName, codeCellRef)
-                log.Printf("  REG: Wrote code to %s: '%s' (night=%v), verified: '%s'", codeCellRef, codeToWrite, isNightShift, writtenValue)
-
-                // Write the NUMBER (from JobCode) to JOB column (no "N" prefix on number)
-                jobCellRef := jobColumns[i] + "4"
-                f.SetCellValue(sheetName, jobCellRef, job.JobCode)
-                writtenJobValue, _ := f.GetCellValue(sheetName, jobCellRef)
-                log.Printf("  REG: Wrote job# to %s: '%s', verified: '%s'", jobCellRef, job.JobCode, writtenJobValue)
-            } else {
-                log.Printf("  REG WARNING: Could not resolve job '%s' (key='%s', night=%v)", actualJobNumber, jobNumberKey, isNightShift)
-                log.Printf("  REG WARNING: Available jobs by number: %v", getMapKeys(jobByNumber))
-                log.Printf("  REG WARNING: Available jobs by code: %v", getMapKeys(jobByCode))
-                // Can't find the job - write the job number to CODE column with "N" prefix if night shift
-                codeToWrite := actualJobNumber
-                if isNightShift {
-                    codeToWrite = "N" + actualJobNumber
-                }
-                f.SetCellValue(sheetName, codeColumns[i]+"4", codeToWrite)
-                log.Printf("  REG WARNING: Wrote fallback code to %s4: '%s'", codeColumns[i], codeToWrite)
-            }
+        labourToWrite := labour
+        if isNight && labourToWrite != "" {
+            labourToWrite = "N" + labourToWrite
         }
+        f.SetCellValue(sheetName, codeColumns[i]+"4", labourToWrite)
+        f.SetCellValue(sheetName, jobColumns[i]+"4", job)
+
+        log.Printf("  REG header col %d: labour='%s' job='%s' (key='%s')", i, labourToWrite, job, colKey)
     }
 
-    // Fill OVERTIME headers (Row 15) - only if there are overtime jobs
-    if len(overtimeJobCodes) > 0 {
-        // Clear placeholder text from overtime job columns that will be used
-        for i := 0; i < len(overtimeJobCodes) && i < len(codeColumns); i++ {
-            f.SetCellValue(sheetName, codeColumns[i]+"15", "")
-            f.SetCellValue(sheetName, jobColumns[i]+"15", "")
-        }
-
-        // Fill overtime job headers (Row 15)
-        for i, jobNumberKey := range overtimeJobCodes {
-            if i >= len(codeColumns) {
-                log.Printf("Warning: More than %d overtime jobs, truncating", len(codeColumns))
-                break
-            }
-
-            // Remove "N-" prefix from night shift entries to look up the job
-            actualJobNumber := jobNumberKey
-            isNightShift := strings.HasPrefix(jobNumberKey, "N-")
-            if isNightShift {
-                actualJobNumber = strings.TrimPrefix(jobNumberKey, "N-")
-            }
-
-            var job *Job
-            // First assume actualJobNumber is a NUMBER
-            if j, ok := jobByNumber[actualJobNumber]; ok {
-                job = j
-            } else if j, ok := jobByCode[actualJobNumber]; ok {
-                // If it's actually a CODE, use that and normalize the number from the job
-                job = j
-                actualJobNumber = j.JobCode
-            }
-
-            if job != nil {
-                // Write the CODE (from JobName) to CODE column
-                // Add "N" prefix to the CODE if it was a night shift
-                codeToWrite := job.JobName // e.g., "201"
-                if isNightShift {
-                    codeToWrite = "N" + job.JobName // e.g., "N201"
-                }
-                f.SetCellValue(sheetName, codeColumns[i]+"15", codeToWrite)
-                log.Printf("  OT: Wrote code to %s15: '%s' (night=%v)", codeColumns[i], codeToWrite, isNightShift)
-
-                // Write the NUMBER (from JobCode) to JOB column (no "N" prefix on number)
-                f.SetCellValue(sheetName, jobColumns[i]+"15", job.JobCode)
-                log.Printf("  OT: Wrote job# to %s15: '%s' (looked up by number '%s')", jobColumns[i], job.JobCode, actualJobNumber)
-            } else {
-                log.Printf("  OT WARNING: Could not resolve job '%s' (key='%s', night=%v)", actualJobNumber, jobNumberKey, isNightShift)
-                log.Printf("  OT WARNING: Available jobs by number: %v", getMapKeys(jobByNumber))
-                log.Printf("  OT WARNING: Available jobs by code: %v", getMapKeys(jobByCode))
-                // Can't find the job - write the job number to CODE column with "N" prefix if night shift
-                codeToWrite := actualJobNumber
-                if isNightShift {
-                    codeToWrite = "N" + actualJobNumber
-                }
-                f.SetCellValue(sheetName, codeColumns[i]+"15", codeToWrite)
-                log.Printf("  OT WARNING: Wrote fallback code to %s15: '%s'", codeColumns[i], codeToWrite)
-            }
-        }
+    // ---- OVERTIME HEADERS (Row 15) ----
+    for i := 0; i < len(overtimeCols) && i < len(codeColumns); i++ {
+        f.SetCellValue(sheetName, codeColumns[i]+"15", "")
+        f.SetCellValue(sheetName, jobColumns[i]+"15", "")
     }
 
-    // Create a map to organize entries by date and job
-    // Key format: "JobNumber" or "N-JobNumber" for night shifts
-    regularTimeEntries := make(map[string]map[string]float64) // date -> jobNumberKey -> hours
-    overtimeEntries := make(map[string]map[string]float64)    // date -> jobNumberKey -> hours
+    for i, colKey := range overtimeCols {
+        if i >= len(codeColumns) {
+            log.Printf("Warning: More than %d overtime columns, truncating", len(codeColumns))
+            break
+        }
+        isNight, job, labour := splitColumnKey(colKey)
+
+        labourToWrite := labour
+        if isNight && labourToWrite != "" {
+            labourToWrite = "N" + labourToWrite
+        }
+        f.SetCellValue(sheetName, codeColumns[i]+"15", labourToWrite)
+        f.SetCellValue(sheetName, jobColumns[i]+"15", job)
+
+        log.Printf("  OT header col %d: labour='%s' job='%s' (key='%s')", i, labourToWrite, job, colKey)
+    }
+
+    // Organize entries by date and (job|labour) column key
+    regularTimeEntries := make(map[string]map[string]float64) // date -> colKey -> hours
+    overtimeEntries := make(map[string]map[string]float64)    // date -> colKey -> hours
 
     for _, entry := range weekData.Entries {
         entryDate, err := time.Parse(time.RFC3339, entry.Date)
@@ -465,39 +383,28 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
         }
 
         dateKey := entryDate.Format("2006-01-02")
+        job := strings.TrimSpace(entry.JobCode)
+        labour := strings.TrimSpace(entry.LabourCode)
 
-        // Log each entry being processed
-        log.Printf("  Processing entry: date=%s, jobCode='%s', hours=%.1f, OT=%v, night=%v", 
-            dateKey, entry.JobCode, entry.Hours, entry.Overtime, entry.IsNightShift)
-
-        // Normalize: entry.JobCode may be a NUMBER or a CODE; translate to job NUMBER for keys
-        normalizedNumber := entry.JobCode
-        if _, ok := jobByNumber[normalizedNumber]; !ok {
-            if j, ok2 := jobByCode[normalizedNumber]; ok2 {
-                normalizedNumber = j.JobCode
-                log.Printf("    Normalized '%s' (code) -> '%s' (number)", entry.JobCode, normalizedNumber)
-            } else {
-                log.Printf("    WARNING: Job '%s' not found in jobByNumber or jobByCode maps!", entry.JobCode)
-            }
-        }
-        jobNumberKey := normalizedNumber
+        // Build a stable key for this cell column
+        colKey := fmt.Sprintf("%s|%s", job, labour)
         if entry.IsNightShift {
-            jobNumberKey = "N-" + normalizedNumber
-            log.Printf("    Night shift detected: key='%s'", jobNumberKey)
+            colKey = "N-" + colKey
         }
+
+        log.Printf("  Processing entry: date=%s, job='%s', labour='%s', hours=%.2f, OT=%v, night=%v => key='%s'",
+            dateKey, job, labour, entry.Hours, entry.Overtime, entry.IsNightShift, colKey)
 
         if entry.Overtime {
             if overtimeEntries[dateKey] == nil {
                 overtimeEntries[dateKey] = make(map[string]float64)
             }
-            overtimeEntries[dateKey][jobNumberKey] += entry.Hours
-            log.Printf("  OT entry stored: %s, Job %s, Hours %.1f", dateKey, jobNumberKey, entry.Hours)
+            overtimeEntries[dateKey][colKey] += entry.Hours
         } else {
             if regularTimeEntries[dateKey] == nil {
                 regularTimeEntries[dateKey] = make(map[string]float64)
             }
-            regularTimeEntries[dateKey][jobNumberKey] += entry.Hours
-            log.Printf("  REG entry stored: %s, Job %s, Hours %.1f", dateKey, jobNumberKey, entry.Hours)
+            regularTimeEntries[dateKey][colKey] += entry.Hours
         }
     }
 
@@ -515,30 +422,30 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
         f.SetCellValue(sheetName, fmt.Sprintf("B%d", regularRow), excelDateSerial)
         f.SetCellValue(sheetName, fmt.Sprintf("B%d", overtimeRow), excelDateSerial)
 
-        // Fill regular time hours - WRITE TO CODE COLUMNS (C, E, G, I, K...)
+        // Fill regular time hours
         if regularHours, exists := regularTimeEntries[dateKey]; exists {
-            for i, jobCode := range regularJobCodes {
+            for i, k := range regularCols {
                 if i >= len(codeColumns) {
                     break
                 }
-                if hours, hasHours := regularHours[jobCode]; hasHours && hours > 0 {
+                if hours, hasHours := regularHours[k]; hasHours && hours > 0 {
                     cellRef := fmt.Sprintf("%s%d", codeColumns[i], regularRow)
                     f.SetCellValue(sheetName, cellRef, hours)
-                    log.Printf("    Writing REG: %s = %.1f (job %s)", cellRef, hours, jobCode)
+                    log.Printf("    Writing REG: %s = %.2f (key %s)", cellRef, hours, k)
                 }
             }
         }
 
-        // Fill overtime hours - WRITE TO CODE COLUMNS (C, E, G, I, K...)
+        // Fill overtime hours
         if otHours, exists := overtimeEntries[dateKey]; exists {
-            for i, jobCode := range overtimeJobCodes {
+            for i, k := range overtimeCols {
                 if i >= len(codeColumns) {
                     break
                 }
-                if hours, hasHours := otHours[jobCode]; hasHours && hours > 0 {
+                if hours, hasHours := otHours[k]; hasHours && hours > 0 {
                     cellRef := fmt.Sprintf("%s%d", codeColumns[i], overtimeRow)
                     f.SetCellValue(sheetName, cellRef, hours)
-                    log.Printf("    Writing OT: %s = %.1f (job %s)", cellRef, hours, jobCode)
+                    log.Printf("    Writing OT: %s = %.2f (key %s)", cellRef, hours, k)
                 }
             }
         }
@@ -548,30 +455,47 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
     return nil
 }
 
-// getUniqueJobCodesForType returns unique job NUMBERS from entries filtered by overtime type
-// Night shift entries get "N-" prefixed to their job NUMBER
-// isOvertime = true: returns only overtime job numbers
-// isOvertime = false: returns only regular time job numbers
-func getUniqueJobCodesForType(entries []Entry, isOvertime bool) []string {
+// columnKey returns a unique column key for an entry, including night-shift separation.
+// Format: "job|labour" or "N-job|labour" (using "N-" prefix).
+func columnKey(e Entry) string {
+    base := fmt.Sprintf("%s|%s", strings.TrimSpace(e.JobCode), strings.TrimSpace(e.LabourCode))
+    if e.IsNightShift {
+        return "N-" + base
+    }
+    return base
+}
+
+// splitColumnKey parses a column key back into (isNight, job, labour).
+func splitColumnKey(k string) (bool, string, string) {
+    isNight := strings.HasPrefix(k, "N-")
+    if isNight {
+        k = strings.TrimPrefix(k, "N-")
+    }
+    parts := strings.SplitN(k, "|", 2)
+    job := ""
+    labour := ""
+    if len(parts) > 0 {
+        job = parts[0]
+    }
+    if len(parts) > 1 {
+        labour = parts[1]
+    }
+    return isNight, job, labour
+}
+
+// getUniqueColumnsForType returns unique (job|labour) column keys from entries filtered by overtime type.
+func getUniqueColumnsForType(entries []Entry, isOvertime bool) []string {
     seen := make(map[string]bool)
     var result []string
 
     for _, entry := range entries {
-        // Skip if not matching the type we want
         if entry.Overtime != isOvertime {
             continue
         }
-
-        // Use the job NUMBER (from entry.JobCode)
-        jobNumberKey := entry.JobCode
-        // Prefix with "N-" if it's a night shift
-        if entry.IsNightShift {
-            jobNumberKey = "N-" + entry.JobCode
-        }
-
-        if !seen[jobNumberKey] {
-            seen[jobNumberKey] = true
-            result = append(result, jobNumberKey)
+        k := columnKey(entry)
+        if !seen[k] {
+            seen[k] = true
+            result = append(result, k)
         }
     }
 
@@ -615,9 +539,10 @@ func generateBasicExcelFile(req TimecardRequest) ([]byte, error) {
     // Headers
     f.SetCellValue(sheet, "A6", "Date")
     f.SetCellValue(sheet, "B6", "Job Code")
-    f.SetCellValue(sheet, "C6", "Job Name")
-    f.SetCellValue(sheet, "D6", "Hours")
-    f.SetCellValue(sheet, "E6", "Overtime")
+    f.SetCellValue(sheet, "C6", "Labour Code")
+    f.SetCellValue(sheet, "D6", "Job Name")
+    f.SetCellValue(sheet, "E6", "Hours")
+    f.SetCellValue(sheet, "F6", "Overtime")
 
     // Create job lookup
     jobMap := make(map[string]string)
@@ -647,15 +572,16 @@ func generateBasicExcelFile(req TimecardRequest) ([]byte, error) {
         }
         f.SetCellValue(sheet, fmt.Sprintf("B%d", row), jobCodeToWrite)
 
-        f.SetCellValue(sheet, fmt.Sprintf("C%d", row), jobMap[entry.JobCode])
-        f.SetCellValue(sheet, fmt.Sprintf("D%d", row), entry.Hours)
+        f.SetCellValue(sheet, fmt.Sprintf("C%d", row), entry.LabourCode)
+        f.SetCellValue(sheet, fmt.Sprintf("D%d", row), jobMap[entry.JobCode])
+        f.SetCellValue(sheet, fmt.Sprintf("E%d", row), entry.Hours)
 
         overtimeStr := "No"
         if entry.Overtime {
             overtimeStr = "Yes"
             totalOvertimeHours += entry.Hours
         }
-        f.SetCellValue(sheet, fmt.Sprintf("E%d", row), overtimeStr)
+        f.SetCellValue(sheet, fmt.Sprintf("F%d", row), overtimeStr)
 
         totalHours += entry.Hours
         row++
@@ -664,10 +590,10 @@ func generateBasicExcelFile(req TimecardRequest) ([]byte, error) {
     // Add totals
     row++
     f.SetCellValue(sheet, fmt.Sprintf("A%d", row), "Total Hours:")
-    f.SetCellValue(sheet, fmt.Sprintf("D%d", row), totalHours)
+    f.SetCellValue(sheet, fmt.Sprintf("E%d", row), totalHours)
     row++
     f.SetCellValue(sheet, fmt.Sprintf("A%d", row), "Total Overtime:")
-    f.SetCellValue(sheet, fmt.Sprintf("D%d", row), totalOvertimeHours)
+    f.SetCellValue(sheet, fmt.Sprintf("E%d", row), totalOvertimeHours)
 
     // Write to buffer
     buffer, err := f.WriteToBuffer()
