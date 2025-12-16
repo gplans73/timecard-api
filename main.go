@@ -1,31 +1,31 @@
 package main
 
 import (
-    "bytes"
-    "encoding/base64"
-    "encoding/json"
-    "fmt"
-    "log"
-    "net/http"
-    "net/smtp"
-    "os"
-    "strings"
-    "time"
+	"bytes"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"log"
+	"net/http"
+	"net/smtp"
+	"os"
+	"strings"
+	"time"
 
-    "github.com/xuri/excelize/v2"
+	"github.com/xuri/excelize/v2"
 )
 
 // TimecardRequest matches the Swift GoTimecardRequest structure
 type TimecardRequest struct {
-    EmployeeName     string      `json:"employee_name"`
-    PayPeriodNum     int         `json:"pay_period_num"`
-    Year             int         `json:"year"`
-    WeekStartDate    string      `json:"week_start_date"`
-    WeekNumberLabel  string      `json:"week_number_label"`
-    Jobs             []Job       `json:"jobs"`
-    Entries          []Entry     `json:"entries"`
-    Weeks            []WeekData  `json:"weeks,omitempty"`
-    LabourCodes     []LabourCode `json:"labour_codes,omitempty"`
+	EmployeeName    string       `json:"employee_name"`
+	PayPeriodNum    int          `json:"pay_period_num"`
+	Year            int          `json:"year"`
+	WeekStartDate   string       `json:"week_start_date"`
+	WeekNumberLabel string       `json:"week_number_label"`
+	Jobs            []Job        `json:"jobs"`
+	Entries         []Entry      `json:"entries"`
+	Weeks           []WeekData   `json:"weeks,omitempty"`
+	LabourCodes     []LabourCode `json:"labour_codes,omitempty"`
 }
 
 
@@ -250,33 +250,34 @@ func generateExcelFile(req TimecardRequest) ([]byte, error) {
         }
     }
 
-    // Get the first sheet (Week 1)
+    // Get the sheets
     sheets := f.GetSheetList()
     if len(sheets) == 0 {
         return nil, fmt.Errorf("no sheets found in template")
     }
 
-    // Process Week 1 data
-    if len(req.Weeks) > 0 {
-        weekData := req.Weeks[0]
-        err = fillWeekSheet(f, sheets[0], req, weekData, 1)
+    log.Printf("Template has %d sheets: %v", len(sheets), sheets)
+
+    // Process each week based on its WeekNumber, not array index
+    // This is the key fix - use week_number to determine which sheet to fill
+    for _, weekData := range req.Weeks {
+        // Determine which sheet to use based on WeekNumber (1-indexed)
+        sheetIndex := weekData.WeekNumber - 1 // Convert to 0-indexed
+
+        if sheetIndex < 0 || sheetIndex >= len(sheets) {
+            log.Printf("Warning: Week %d requested but only %d sheets available, using sheet 0", weekData.WeekNumber, len(sheets))
+            sheetIndex = 0
+        }
+
+        sheetName := sheets[sheetIndex]
+        log.Printf("Filling sheet '%s' (index %d) with Week %d data (%d entries)",
+            sheetName, sheetIndex, weekData.WeekNumber, len(weekData.Entries))
+
+        err = fillWeekSheet(f, sheetName, req, weekData, weekData.WeekNumber)
         if err != nil {
-            log.Printf("Error filling Week 1: %v", err)
+            log.Printf("Error filling Week %d: %v", weekData.WeekNumber, err)
         }
     }
-
-    // Process Week 2 data if available
-    if len(sheets) > 1 && len(req.Weeks) > 1 {
-        weekData := req.Weeks[1]
-        err = fillWeekSheet(f, sheets[1], req, weekData, 2)
-        if err != nil {
-            log.Printf("Error filling Week 2: %v", err)
-        }
-    }
-
-    // Force Excel to recalculate all formulas when the file is opened
-    // Note: The formulas in the template will recalculate automatically when Excel opens the file
-    // We just need to make sure we're not overwriting them with static values
 
     // Write to buffer
     buffer, err := f.WriteToBuffer()
