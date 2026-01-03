@@ -264,11 +264,18 @@ func generateExcelFile(req TimecardRequest) ([]byte, error) {
 		}
 	}
 
-	// Force Excel to recalculate all formulas when opened
-	// This ensures the on-call amounts (AL1, AM1) are reflected in the formula results
-	f.SetWorkbookProps(&excelize.WorkbookPropsOptions{
-		FullCalcOnLoad: boolPtr(true),
-	})
+	// NOTE (Go 1.21 compatible):
+	// Removed FullCalcOnLoad because it is NOT a field on WorkbookPropsOptions.
+	//
+	// If you upgrade to Go 1.23+ AND use excelize v2.9.1+ you can do:
+	//
+	//   enable := true
+	//   if err := f.SetCalcProps(&excelize.CalcPropsOptions{
+	//       FullCalcOnLoad: &enable,
+	//   }); err != nil {
+	//       log.Printf("SetCalcProps failed: %v", err)
+	//   }
+	//
 
 	buffer, err := f.WriteToBuffer()
 	if err != nil {
@@ -276,11 +283,6 @@ func generateExcelFile(req TimecardRequest) ([]byte, error) {
 	}
 
 	return buffer.Bytes(), nil
-}
-
-// Helper function to create a pointer to a bool
-func boolPtr(b bool) *bool {
-	return &b
 }
 
 func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, weekData WeekData, weekNum int) error {
