@@ -264,12 +264,23 @@ func generateExcelFile(req TimecardRequest) ([]byte, error) {
 		}
 	}
 
+	// Force Excel to recalculate all formulas when opened
+	// This ensures the on-call amounts (AL1, AM1) are reflected in the formula results
+	f.SetWorkbookProps(&excelize.WorkbookPropsOptions{
+		FullCalcOnLoad: boolPtr(true),
+	})
+
 	buffer, err := f.WriteToBuffer()
 	if err != nil {
 		return nil, err
 	}
 
 	return buffer.Bytes(), nil
+}
+
+// Helper function to create a pointer to a bool
+func boolPtr(b bool) *bool {
+	return &b
 }
 
 func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, weekData WeekData, weekNum int) error {
