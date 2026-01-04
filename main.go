@@ -228,6 +228,63 @@ func getOnCallPerCallAmount(req TimecardRequest) float64 {
 	return 50.0
 }
 
+// --- NEW: hide numbers while keeping formulas working ---
+func ensureHiddenValueStyle(f *excelize.File) (int, error) {
+	// Custom number format ";;;" hides value display (and typically printing) but retains numeric value for formulas.
+	// Excelize supports custom formats via Style.CustomNumFmt.
+	style := &excelize.Style{
+		CustomNumFmt: &excelize.CustomNumFmt{Code: ";;;"},
+	}
+	return f.NewStyle(style)
+}
+
+func applyStyleToCell(f *excelize.File, sheet, axis string, styleID int) {
+	if err := f.SetCellStyle(sheet, axis, axis, styleID); err != nil {
+		log.Printf("WARN: failed to set style on %s!%s: %v", sheet, axis, err)
+	}
+}
+
+// --- NEW: write to the top-left of any merged range that contains axis ---
+func setCellValueRespectMerge(f *excelize.File, sheet, axis string, value any) {
+	merged, err := f.GetMergeCells(sheet)
+	if err == nil {
+		for _, m := range merged {
+			// m.GetStartAxis(), m.GetEndAxis() are available on MergeCell
+			start := m.GetStartAxis()
+			end := m.GetEndAxis()
+			if axisInRange(axis, start, end) {
+				// Write to top-left of merged range
+				if err := f.SetCellValue(sheet, start, value); err != nil {
+					log.Printf("WARN: SetCellValue(merged start) %s!%s failed: %v", sheet, start, err)
+				}
+				return
+			}
+		}
+	}
+	// fallback: normal set
+	if err := f.SetCellValue(sheet, axis, value); err != nil {
+		log.Printf("WARN: SetCellValue %s!%s failed: %v", sheet, axis, err)
+	}
+}
+
+func axisInRange(axis, start, end string) bool {
+	colA, rowA, err1 := excelize.CellNameToCoordinates(axis)
+	colS, rowS, err2 := excelize.CellNameToCoordinates(start)
+	colE, rowE, err3 := excelize.CellNameToCoordinates(end)
+	if err1 != nil || err2 != nil || err3 != nil {
+		return false
+	}
+	minC, maxC := colS, colE
+	if minC > maxC {
+		minC, maxC = maxC, minC
+	}
+	minR, maxR := rowS, rowE
+	if minR > maxR {
+		minR, maxR = maxR, minR
+	}
+	return colA >= minC && colA <= maxC && rowA >= minR && rowA <= maxR
+}
+
 func generateExcelFile(req TimecardRequest) ([]byte, error) {
 	templatePath := "template.xlsx"
 	f, err := excelize.OpenFile(templatePath)
@@ -236,6 +293,12 @@ func generateExcelFile(req TimecardRequest) ([]byte, error) {
 		return generateBasicExcelFile(req)
 	}
 	defer f.Close()
+
+	hiddenStyleID, styleErr := ensureHiddenValueStyle(f)
+	if styleErr != nil {
+		log.Printf("WARN: could not create hidden style: %v", styleErr)
+		hiddenStyleID = 0
+	}
 
 	// If Weeks isn't provided, build Week 1/Week 2 from Entries
 	if len(req.Weeks) == 0 && len(req.Entries) > 0 {
@@ -301,7 +364,6 @@ func generateExcelFile(req TimecardRequest) ([]byte, error) {
 
 		sheetName := sheets[sheetIndex]
 
-		// Log marker cells before filling
 		a3Before, _ := f.GetCellValue(sheetName, "A3")
 		ad3Before, _ := f.GetCellValue(sheetName, "AD3")
 		log.Printf("MARKER BEFORE fill: sheet=%s A3=%q AD3=%q", sheetName, a3Before, ad3Before)
@@ -309,12 +371,11 @@ func generateExcelFile(req TimecardRequest) ([]byte, error) {
 		log.Printf("Filling sheet '%s' with Week %d data (%d entries)",
 			sheetName, weekData.WeekNumber, len(weekData.Entries))
 
-		err = fillWeekSheet(f, sheetName, req, weekData, weekData.WeekNumber)
+		err = fillWeekSheet(f, sheetName, req, weekData, weekData.WeekNumber, hiddenStyleID)
 		if err != nil {
 			log.Printf("Error filling Week %d: %v", weekData.WeekNumber, err)
 		}
 
-		// Log marker cells after filling
 		a3After, _ := f.GetCellValue(sheetName, "A3")
 		ad3After, _ := f.GetCellValue(sheetName, "AD3")
 		log.Printf("MARKER AFTER fill: sheet=%s A3=%q AD3=%q", sheetName, a3After, ad3After)
@@ -327,7 +388,7 @@ func generateExcelFile(req TimecardRequest) ([]byte, error) {
 	return buffer.Bytes(), nil
 }
 
-func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, weekData WeekData, weekNum int) error {
+func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, weekData WeekData, weekNum int, hiddenStyleID int) error {
 	weekStart, err := time.Parse(time.RFC3339, weekData.WeekStartDate)
 	if err != nil {
 		return fmt.Errorf("error parsing week start date: %v", err)
@@ -342,35 +403,39 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 		jobNameMap[job.JobCode] = job.JobName
 	}
 
-	// Header info
-	f.SetCellValue(sheetName, "M2", req.EmployeeName)
-	f.SetCellValue(sheetName, "AJ2", req.PayPeriodNum)
-	f.SetCellValue(sheetName, "AJ3", req.Year)
+	// Header info (MERGE-SAFE)
+	setCellValueRespectMerge(f, sheetName, "M2", req.EmployeeName)
+	setCellValueRespectMerge(f, sheetName, "AJ2", req.PayPeriodNum)
+	setCellValueRespectMerge(f, sheetName, "AJ3", req.Year)
 
 	excelDate := timeToExcelDate(weekStart)
-	f.SetCellValue(sheetName, "B4", excelDate)
-	f.SetCellValue(sheetName, "AJ4", weekData.WeekLabel)
+	setCellValueRespectMerge(f, sheetName, "B4", excelDate)
+	setCellValueRespectMerge(f, sheetName, "AJ4", weekData.WeekLabel)
 
 	// Write On Call rate cells used by template formulas
-	// AL1 = Daily On Call rate, AM1 = Per Call rate
 	onCallDailyAmount := getOnCallDailyAmount(req)
 	onCallPerCallAmount := getOnCallPerCallAmount(req)
 
-	f.SetCellValue(sheetName, "AL1", onCallDailyAmount)
-	f.SetCellValue(sheetName, "AM1", onCallPerCallAmount)
+	// Keep values where your template expects them, but hide display so "200" doesn't show on sheet/PDF
+	setCellValueRespectMerge(f, sheetName, "AL1", onCallDailyAmount)
+	setCellValueRespectMerge(f, sheetName, "AM1", onCallPerCallAmount)
 
-	log.Printf("  On Call rates written: AL1=$%.2f (daily), AM1=$%.2f (perCall)",
+	if hiddenStyleID != 0 {
+		applyStyleToCell(f, sheetName, "AL1", hiddenStyleID)
+		applyStyleToCell(f, sheetName, "AM1", hiddenStyleID)
+	}
+
+	log.Printf("  On Call rates written (hidden): AL1=$%.2f (daily), AM1=$%.2f (perCall)",
 		onCallDailyAmount, onCallPerCallAmount)
 
 	// Column layout
 	codeColumns := []string{"C", "E", "G", "I", "K", "M", "O", "Q", "S", "U", "W", "Y", "AA", "AC", "AE", "AG"}
 	jobColumns := []string{"D", "F", "H", "J", "L", "N", "P", "R", "T", "V", "X", "Z", "AB", "AD", "AF", "AH"}
 
-	// Get unique column keys for regular and overtime entries
 	regularCols := getUniqueColumnsForType(weekData.Entries, false, jobNameMap)
 	overtimeCols := getUniqueColumnsForType(weekData.Entries, true, jobNameMap)
 
-	// Fill Regular headers (Row 4) - only write to cells we need, don't clear others
+	// Fill Regular headers (Row 4)
 	for i, colKey := range regularCols {
 		if i >= len(codeColumns) {
 			break
@@ -381,17 +446,16 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 		if isNight && labourToWrite != "" {
 			labourToWrite = "N" + labourToWrite
 		}
-		// If this is an On Call job, write "On Call" to the labour code column
 		if strings.EqualFold(jobName, "On Call") {
 			labourToWrite = "On Call"
 		}
 
-		f.SetCellValue(sheetName, codeColumns[i]+"4", labourToWrite)
-		f.SetCellValue(sheetName, jobColumns[i]+"4", jobCode)
-		log.Printf("  REG header col %d: labour='%s' job='%s' (key='%s')", i, labourToWrite, jobCode, colKey)
+		// These are not merged in your template (usually), normal set is fine:
+		_ = f.SetCellValue(sheetName, codeColumns[i]+"4", labourToWrite)
+		_ = f.SetCellValue(sheetName, jobColumns[i]+"4", jobCode)
 	}
 
-	// Fill Overtime headers (Row 15) - only write to cells we need
+	// Fill Overtime headers (Row 15)
 	for i, colKey := range overtimeCols {
 		if i >= len(codeColumns) {
 			break
@@ -406,12 +470,10 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 			labourToWrite = "On Call"
 		}
 
-		f.SetCellValue(sheetName, codeColumns[i]+"15", labourToWrite)
-		f.SetCellValue(sheetName, jobColumns[i]+"15", jobCode)
-		log.Printf("  OT header col %d: labour='%s' job='%s' (key='%s')", i, labourToWrite, jobCode, colKey)
+		_ = f.SetCellValue(sheetName, codeColumns[i]+"15", labourToWrite)
+		_ = f.SetCellValue(sheetName, jobColumns[i]+"15", jobCode)
 	}
 
-	// Organize entries by date+column
 	regularTimeEntries := make(map[string]map[string]float64)
 	overtimeEntries := make(map[string]map[string]float64)
 
@@ -423,9 +485,6 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 
 		dateKey := entryDate.Format("2006-01-02")
 		colKey := columnKey(entry, jobNameMap)
-
-		log.Printf("  Processing entry: date=%s, job='%s', labour='%s', hours=%.2f, OT=%v, night=%v => key='%s'",
-			dateKey, entry.JobCode, entry.LabourCode, entry.Hours, entry.Overtime, entry.IsNightShift, colKey)
 
 		if entry.Overtime {
 			if overtimeEntries[dateKey] == nil {
@@ -440,7 +499,6 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 		}
 	}
 
-	// Fill each day
 	for dayOffset := 0; dayOffset < 7; dayOffset++ {
 		currentDate := weekStart.AddDate(0, 0, dayOffset)
 		dateKey := currentDate.Format("2006-01-02")
@@ -449,8 +507,8 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 		regularRow := 5 + dayOffset
 		overtimeRow := 16 + dayOffset
 
-		f.SetCellValue(sheetName, fmt.Sprintf("B%d", regularRow), excelDateSerial)
-		f.SetCellValue(sheetName, fmt.Sprintf("B%d", overtimeRow), excelDateSerial)
+		_ = f.SetCellValue(sheetName, fmt.Sprintf("B%d", regularRow), excelDateSerial)
+		_ = f.SetCellValue(sheetName, fmt.Sprintf("B%d", overtimeRow), excelDateSerial)
 
 		if regularHours, exists := regularTimeEntries[dateKey]; exists {
 			for i, k := range regularCols {
@@ -459,7 +517,7 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 				}
 				if hours, ok := regularHours[k]; ok && hours > 0 {
 					cellRef := fmt.Sprintf("%s%d", jobColumns[i], regularRow)
-					f.SetCellValue(sheetName, cellRef, hours)
+					_ = f.SetCellValue(sheetName, cellRef, hours)
 				}
 			}
 		}
@@ -471,7 +529,7 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 				}
 				if hours, ok := otHours[k]; ok && hours > 0 {
 					cellRef := fmt.Sprintf("%s%d", jobColumns[i], overtimeRow)
-					f.SetCellValue(sheetName, cellRef, hours)
+					_ = f.SetCellValue(sheetName, cellRef, hours)
 				}
 			}
 		}
