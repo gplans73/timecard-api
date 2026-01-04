@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -73,9 +72,6 @@ func main() {
 		port = "8080"
 	}
 
-	// Log template info at startup
-	logTemplateInfo()
-
 	http.HandleFunc("/health", healthHandler)
 	http.HandleFunc("/api/generate-timecard", corsMiddleware(generateTimecardHandler))
 	http.HandleFunc("/api/email-timecard", corsMiddleware(emailTimecardHandler))
@@ -84,44 +80,6 @@ func main() {
 	if err := http.ListenAndServe(":"+port, nil); err != nil {
 		log.Fatal(err)
 	}
-}
-
-func logTemplateInfo() {
-	templatePath := "template.xlsx"
-	data, err := os.ReadFile(templatePath)
-	if err != nil {
-		log.Printf("TEMPLATE startup: ERROR reading template: %v", err)
-		return
-	}
-
-	hash := sha256.Sum256(data)
-	hashStr := fmt.Sprintf("%x", hash)
-
-	f, err := excelize.OpenFile(templatePath)
-	if err != nil {
-		log.Printf("TEMPLATE startup: ERROR opening template: %v", err)
-		return
-	}
-	defer f.Close()
-
-	sheets := f.GetSheetList()
-
-	// Check marker cells
-	markers := make(map[string]string)
-	for _, sheet := range sheets {
-		a3, _ := f.GetCellValue(sheet, "A3")
-		ad3, _ := f.GetCellValue(sheet, "AD3")
-		markers[sheet+"!A3"] = a3
-		markers[sheet+"!AD3"] = ad3
-	}
-
-	commit := os.Getenv("RENDER_GIT_COMMIT")
-	if commit == "" {
-		commit = "unknown"
-	}
-
-	log.Printf("TEMPLATE startup: OK path=%s size=%d sha256=%s sheets=%v markers=%v commit=%s",
-		templatePath, len(data), hashStr, sheets, markers, commit)
 }
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {
@@ -228,16 +186,6 @@ func getOnCallPerCallAmount(req TimecardRequest) float64 {
 	return 50.0
 }
 
-// setCellValuePreserveStyle writes a value but reapplies whatever style the template cell already had.
-// This prevents borders/date formats/etc from disappearing after SetCellValue.
-func setCellValuePreserveStyle(f *excelize.File, sheet, cell string, v any) {
-	styleID, err := f.GetCellStyle(sheet, cell)
-	_ = f.SetCellValue(sheet, cell, v)
-	if err == nil && styleID != 0 {
-		_ = f.SetCellStyle(sheet, cell, cell, styleID)
-	}
-}
-
 func generateExcelFile(req TimecardRequest) ([]byte, error) {
 	templatePath := "template.xlsx"
 	f, err := excelize.OpenFile(templatePath)
@@ -310,12 +258,6 @@ func generateExcelFile(req TimecardRequest) ([]byte, error) {
 		}
 
 		sheetName := sheets[sheetIndex]
-
-		// Log marker cells before filling
-		a3Before, _ := f.GetCellValue(sheetName, "A3")
-		ad3Before, _ := f.GetCellValue(sheetName, "AD3")
-		log.Printf("MARKER BEFORE fill: sheet=%s A3=%q AD3=%q", sheetName, a3Before, ad3Before)
-
 		log.Printf("Filling sheet '%s' with Week %d data (%d entries)",
 			sheetName, weekData.WeekNumber, len(weekData.Entries))
 
@@ -323,12 +265,13 @@ func generateExcelFile(req TimecardRequest) ([]byte, error) {
 		if err != nil {
 			log.Printf("Error filling Week %d: %v", weekData.WeekNumber, err)
 		}
-
-		// Log marker cells after filling
-		a3After, _ := f.GetCellValue(sheetName, "A3")
-		ad3After, _ := f.GetCellValue(sheetName, "AD3")
-		log.Printf("MARKER AFTER fill: sheet=%s A3=%q AD3=%q", sheetName, a3After, ad3After)
 	}
+
+	// NOTE: FullCalcOnLoad is NOT a WorkbookProps option in this excelize version.
+	// With Go 1.21 / the current dependency set, we skip forcing a full recalculation on open.
+	// If you upgrade to Go 1.23+ and excelize v2.9.1+, you can do:
+	//   enable := true
+	//   _ = f.SetCalcProps(&excelize.CalcPropsOptions{FullCalcOnLoad: &enable})
 
 	buffer, err := f.WriteToBuffer()
 	if err != nil {
@@ -346,82 +289,70 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 	log.Printf("=== Filling %s ===", sheetName)
 	log.Printf("Week start: %s, Entries: %d", weekStart.Format("2006-01-02"), len(weekData.Entries))
 
-	// Build job code -> job name map for On Call detection
-	jobNameMap := make(map[string]string)
-	for _, job := range req.Jobs {
-		jobNameMap[job.JobCode] = job.JobName
-	}
-
-	// Header info (preserve style)
-	setCellValuePreserveStyle(f, sheetName, "M2", req.EmployeeName)
-	setCellValuePreserveStyle(f, sheetName, "AJ2", req.PayPeriodNum)
-	setCellValuePreserveStyle(f, sheetName, "AJ3", req.Year)
+	// Header info
+	f.SetCellValue(sheetName, "M2", req.EmployeeName)
+	f.SetCellValue(sheetName, "AJ2", req.PayPeriodNum)
+	f.SetCellValue(sheetName, "AJ3", req.Year)
 
 	excelDate := timeToExcelDate(weekStart)
-	setCellValuePreserveStyle(f, sheetName, "B4", excelDate)
-	setCellValuePreserveStyle(f, sheetName, "AJ4", weekData.WeekLabel)
+	f.SetCellValue(sheetName, "B4", excelDate)
+	f.SetCellValue(sheetName, "AJ4", weekData.WeekLabel)
 
-	// Write On Call rate cells used by template formulas
-	// AL1 = Daily On Call rate, AM1 = Per Call rate
+	// ============================================================
+	// IMPORTANT: Write On Call rate cells used by template formulas
+	// AL1 = Daily On Call rate (referenced by AK12 formula)
+	// AM1 = Per Call rate (referenced by AK13 formula)
+	// ============================================================
 	onCallDailyAmount := getOnCallDailyAmount(req)
 	onCallPerCallAmount := getOnCallPerCallAmount(req)
-	setCellValuePreserveStyle(f, sheetName, "AL1", onCallDailyAmount)
-	setCellValuePreserveStyle(f, sheetName, "AM1", onCallPerCallAmount)
 
-	// Hide AL/AM + row 1 so the "200" (and other helper values) never appear in Excel/PDF print output.
-	// (Formulas still work.)
-	_ = f.SetRowHeight(sheetName, 1, 0)
-	_ = f.SetColWidth(sheetName, "AL", "AM", 0.01)
+	f.SetCellValue(sheetName, "AL1", onCallDailyAmount)
+	f.SetCellValue(sheetName, "AM1", onCallPerCallAmount)
 
 	log.Printf("  On Call rates written: AL1=$%.2f (daily), AM1=$%.2f (perCall)",
 		onCallDailyAmount, onCallPerCallAmount)
+	// ============================================================
 
-	// Column layout
 	codeColumns := []string{"C", "E", "G", "I", "K", "M", "O", "Q", "S", "U", "W", "Y", "AA", "AC", "AE", "AG"}
 	jobColumns := []string{"D", "F", "H", "J", "L", "N", "P", "R", "T", "V", "X", "Z", "AB", "AD", "AF", "AH"}
 
-	// Get unique column keys for regular and overtime entries
-	regularCols := getUniqueColumnsForType(weekData.Entries, false, jobNameMap)
-	overtimeCols := getUniqueColumnsForType(weekData.Entries, true, jobNameMap)
+	regularCols := getUniqueColumnsForType(weekData.Entries, false)
+	overtimeCols := getUniqueColumnsForType(weekData.Entries, true)
 
-	// Fill Regular headers (Row 4)
+	// Regular headers (Row 4)
+	for i := 0; i < len(regularCols) && i < len(codeColumns); i++ {
+		f.SetCellValue(sheetName, codeColumns[i]+"4", "")
+		f.SetCellValue(sheetName, jobColumns[i]+"4", "")
+	}
 	for i, colKey := range regularCols {
 		if i >= len(codeColumns) {
 			break
 		}
-		isNight, jobCode, labourCode, jobName := splitColumnKey(colKey)
-
-		labourToWrite := labourCode
+		isNight, job, labour := splitColumnKey(colKey)
+		labourToWrite := labour
 		if isNight && labourToWrite != "" {
 			labourToWrite = "N" + labourToWrite
 		}
-		if strings.EqualFold(jobName, "On Call") {
-			labourToWrite = "On Call"
-		}
-
-		setCellValuePreserveStyle(f, sheetName, codeColumns[i]+"4", labourToWrite)
-		setCellValuePreserveStyle(f, sheetName, jobColumns[i]+"4", jobCode)
-		log.Printf("  REG header col %d: labour='%s' job='%s' (key='%s')", i, labourToWrite, jobCode, colKey)
+		f.SetCellValue(sheetName, codeColumns[i]+"4", labourToWrite)
+		f.SetCellValue(sheetName, jobColumns[i]+"4", job)
 	}
 
-	// Fill Overtime headers (Row 15)
+	// Overtime headers (Row 15)
+	for i := 0; i < len(overtimeCols) && i < len(codeColumns); i++ {
+		f.SetCellValue(sheetName, codeColumns[i]+"15", "")
+		f.SetCellValue(sheetName, jobColumns[i]+"15", "")
+	}
 	for i, colKey := range overtimeCols {
 		if i >= len(codeColumns) {
 			break
 		}
-		isNight, jobCode, labourCode, jobName := splitColumnKey(colKey)
-
-		labourToWrite := labourCode
+		isNight, job, labour := splitColumnKey(colKey)
+		labourToWrite := labour
 		if isNight && labourToWrite != "" {
 			labourToWrite = "N" + labourToWrite
 		}
-		if strings.EqualFold(jobName, "On Call") {
-			labourToWrite = "On Call"
-		}
-
-		setCellValuePreserveStyle(f, sheetName, codeColumns[i]+"15", labourToWrite)
-		setCellValuePreserveStyle(f, sheetName, jobColumns[i]+"15", jobCode)
-		log.Printf("  OT header col %d: labour='%s' job='%s' (key='%s')", i, labourToWrite, jobCode, colKey)
+		f.SetCellValue(sheetName, codeColumns[i]+"15", labourToWrite)
+		f.SetCellValue(sheetName, jobColumns[i]+"15", job)
 	}
 
 	// Organize entries by date+column
@@ -435,10 +366,13 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 		}
 
 		dateKey := entryDate.Format("2006-01-02")
-		colKey := columnKey(entry, jobNameMap)
+		job := strings.TrimSpace(entry.JobCode)
+		labour := strings.TrimSpace(entry.LabourCode)
 
-		log.Printf("  Processing entry: date=%s, job='%s', labour='%s', hours=%.2f, OT=%v, night=%v => key='%s'",
-			dateKey, entry.JobCode, entry.LabourCode, entry.Hours, entry.Overtime, entry.IsNightShift, colKey)
+		colKey := fmt.Sprintf("%s|%s", job, labour)
+		if entry.IsNightShift {
+			colKey = "N-" + colKey
+		}
 
 		if entry.Overtime {
 			if overtimeEntries[dateKey] == nil {
@@ -462,8 +396,8 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 		regularRow := 5 + dayOffset
 		overtimeRow := 16 + dayOffset
 
-		setCellValuePreserveStyle(f, sheetName, fmt.Sprintf("B%d", regularRow), excelDateSerial)
-		setCellValuePreserveStyle(f, sheetName, fmt.Sprintf("B%d", overtimeRow), excelDateSerial)
+		f.SetCellValue(sheetName, fmt.Sprintf("B%d", regularRow), excelDateSerial)
+		f.SetCellValue(sheetName, fmt.Sprintf("B%d", overtimeRow), excelDateSerial)
 
 		if regularHours, exists := regularTimeEntries[dateKey]; exists {
 			for i, k := range regularCols {
@@ -472,7 +406,7 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 				}
 				if hours, ok := regularHours[k]; ok && hours > 0 {
 					cellRef := fmt.Sprintf("%s%d", jobColumns[i], regularRow)
-					setCellValuePreserveStyle(f, sheetName, cellRef, hours)
+					f.SetCellValue(sheetName, cellRef, hours)
 				}
 			}
 		}
@@ -484,7 +418,7 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 				}
 				if hours, ok := otHours[k]; ok && hours > 0 {
 					cellRef := fmt.Sprintf("%s%d", jobColumns[i], overtimeRow)
-					setCellValuePreserveStyle(f, sheetName, cellRef, hours)
+					f.SetCellValue(sheetName, cellRef, hours)
 				}
 			}
 		}
@@ -494,40 +428,32 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 	return nil
 }
 
-func columnKey(e Entry, jobNameMap map[string]string) string {
-	jobCode := strings.TrimSpace(e.JobCode)
-	labourCode := strings.TrimSpace(e.LabourCode)
-	jobName := jobNameMap[jobCode]
-
-	base := fmt.Sprintf("%s|%s|%s", jobCode, labourCode, jobName)
+func columnKey(e Entry) string {
+	base := fmt.Sprintf("%s|%s", strings.TrimSpace(e.JobCode), strings.TrimSpace(e.LabourCode))
 	if e.IsNightShift {
 		return "N-" + base
 	}
 	return base
 }
 
-func splitColumnKey(k string) (bool, string, string, string) {
+func splitColumnKey(k string) (bool, string, string) {
 	isNight := strings.HasPrefix(k, "N-")
 	if isNight {
 		k = strings.TrimPrefix(k, "N-")
 	}
-	parts := strings.SplitN(k, "|", 3)
-	jobCode := ""
-	labourCode := ""
-	jobName := ""
+	parts := strings.SplitN(k, "|", 2)
+	job := ""
+	labour := ""
 	if len(parts) > 0 {
-		jobCode = parts[0]
+		job = parts[0]
 	}
 	if len(parts) > 1 {
-		labourCode = parts[1]
+		labour = parts[1]
 	}
-	if len(parts) > 2 {
-		jobName = parts[2]
-	}
-	return isNight, jobCode, labourCode, jobName
+	return isNight, job, labour
 }
 
-func getUniqueColumnsForType(entries []Entry, isOvertime bool, jobNameMap map[string]string) []string {
+func getUniqueColumnsForType(entries []Entry, isOvertime bool) []string {
 	seen := make(map[string]bool)
 	var result []string
 
@@ -535,7 +461,7 @@ func getUniqueColumnsForType(entries []Entry, isOvertime bool, jobNameMap map[st
 		if entry.Overtime != isOvertime {
 			continue
 		}
-		k := columnKey(entry, jobNameMap)
+		k := columnKey(entry)
 		if !seen[k] {
 			seen[k] = true
 			result = append(result, k)
@@ -605,8 +531,8 @@ func generateBasicExcelFile(req TimecardRequest) ([]byte, error) {
 		}
 		f.SetCellValue(sheet, fmt.Sprintf("F%d", row), overtimeStr)
 
-		jobName := jobMap[entry.JobCode]
-		if strings.EqualFold(jobName, "On Call") {
+		labourUpper := strings.ToUpper(entry.LabourCode)
+		if labourUpper == "ON CALL" || labourUpper == "ONC" || labourUpper == "O/C" {
 			onCallCount++
 		}
 
@@ -694,6 +620,7 @@ func buildEmailMessage(from string, to []string, cc []string, subject string, bo
 	buf.WriteString(fmt.Sprintf("Content-Type: multipart/mixed; boundary=\"%s\"\r\n", boundary))
 	buf.WriteString("\r\n")
 
+	// Body
 	buf.WriteString(fmt.Sprintf("--%s\r\n", boundary))
 	buf.WriteString("Content-Type: text/plain; charset=\"utf-8\"\r\n")
 	buf.WriteString("Content-Transfer-Encoding: quoted-printable\r\n")
@@ -701,6 +628,7 @@ func buildEmailMessage(from string, to []string, cc []string, subject string, bo
 	buf.WriteString(body)
 	buf.WriteString("\r\n\r\n")
 
+	// Attachment
 	if len(attachment) > 0 {
 		buf.WriteString(fmt.Sprintf("--%s\r\n", boundary))
 		buf.WriteString("Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\r\n")
@@ -736,6 +664,7 @@ func splitAndTrim(s string) []string {
 	return out
 }
 
+// Optional: parse float envs if you ever want overrides
 func getEnvFloat(key string) (*float64, error) {
 	v := strings.TrimSpace(os.Getenv(key))
 	if v == "" {
