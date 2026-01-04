@@ -9,14 +9,13 @@ import (
 	"net/http"
 	"net/smtp"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/xuri/excelize/v2"
 )
 
-// Data structures for timecard requests
+// TimecardRequest matches the Swift GoTimecardRequest structure
 type TimecardRequest struct {
 	EmployeeName        string       `json:"employee_name"`
 	PayPeriodNum        int          `json:"pay_period_num"`
@@ -29,6 +28,22 @@ type TimecardRequest struct {
 	LabourCodes         []LabourCode `json:"labour_codes,omitempty"`
 	OnCallDailyAmount   *float64     `json:"on_call_daily_amount,omitempty"`
 	OnCallPerCallAmount *float64     `json:"on_call_per_call_amount,omitempty"`
+}
+
+// GetOnCallDailyAmount returns the on-call daily amount, defaulting to 300 if not set
+func (r *TimecardRequest) GetOnCallDailyAmount() float64 {
+	if r.OnCallDailyAmount != nil {
+		return *r.OnCallDailyAmount
+	}
+	return 300.0
+}
+
+// GetOnCallPerCallAmount returns the per-call amount, defaulting to 50 if not set
+func (r *TimecardRequest) GetOnCallPerCallAmount() float64 {
+	if r.OnCallPerCallAmount != nil {
+		return *r.OnCallPerCallAmount
+	}
+	return 50.0
 }
 
 type Job struct {
@@ -57,11 +72,11 @@ type WeekData struct {
 	Entries       []Entry `json:"entries"`
 }
 
-// EmailTimecardRequest for the email endpoint
+// EmailTimecardRequest for email endpoint
 type EmailTimecardRequest struct {
 	TimecardRequest
 	To      string  `json:"to"`
-	CC      *string `json:"cc,omitempty"`
+	CC      *string `json:"cc"`
 	Subject string  `json:"subject"`
 	Body    string  `json:"body"`
 }
@@ -93,7 +108,7 @@ func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
-		if r.Method == http.MethodOptions {
+		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
@@ -117,7 +132,7 @@ func generateTimecardHandler(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("Generating timecard for %s", req.EmployeeName)
 	log.Printf("On-Call Daily Amount: $%.2f, Per-Call Amount: $%.2f",
-		getOnCallDailyAmount(req), getOnCallPerCallAmount(req))
+		req.GetOnCallDailyAmount(), req.GetOnCallPerCallAmount())
 
 	excelData, err := generateExcelFile(req)
 	if err != nil {
@@ -172,20 +187,6 @@ func emailTimecardHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
-func getOnCallDailyAmount(req TimecardRequest) float64 {
-	if req.OnCallDailyAmount != nil {
-		return *req.OnCallDailyAmount
-	}
-	return 300.0
-}
-
-func getOnCallPerCallAmount(req TimecardRequest) float64 {
-	if req.OnCallPerCallAmount != nil {
-		return *req.OnCallPerCallAmount
-	}
-	return 50.0
-}
-
 func generateExcelFile(req TimecardRequest) ([]byte, error) {
 	templatePath := "template.xlsx"
 	f, err := excelize.OpenFile(templatePath)
@@ -195,15 +196,13 @@ func generateExcelFile(req TimecardRequest) ([]byte, error) {
 	}
 	defer f.Close()
 
-	// If Weeks isn't provided, build Week 1/Week 2 from Entries
+	// Normalize weeks if needed
 	if len(req.Weeks) == 0 && len(req.Entries) > 0 {
 		var week1Start time.Time
 		var parseErr error
-
 		if req.WeekStartDate != "" {
 			week1Start, parseErr = time.Parse(time.RFC3339, req.WeekStartDate)
 		}
-
 		if parseErr != nil || req.WeekStartDate == "" {
 			earliest := time.Now().UTC()
 			for _, e := range req.Entries {
@@ -216,7 +215,6 @@ func generateExcelFile(req TimecardRequest) ([]byte, error) {
 			wd := int(earliest.Weekday())
 			week1Start = time.Date(earliest.Year(), earliest.Month(), earliest.Day()-wd, 0, 0, 0, 0, time.UTC)
 		}
-
 		week2Start := week1Start.AddDate(0, 0, 7)
 
 		w1 := WeekData{WeekNumber: 1, WeekStartDate: week1Start.Format(time.RFC3339), WeekLabel: "Week 1"}
@@ -233,7 +231,6 @@ func generateExcelFile(req TimecardRequest) ([]byte, error) {
 				w1.Entries = append(w1.Entries, e)
 			}
 		}
-
 		if len(w1.Entries) > 0 {
 			req.Weeks = append(req.Weeks, w1)
 		}
@@ -251,9 +248,9 @@ func generateExcelFile(req TimecardRequest) ([]byte, error) {
 
 	for _, weekData := range req.Weeks {
 		sheetIndex := weekData.WeekNumber - 1
+
 		if sheetIndex < 0 || sheetIndex >= len(sheets) {
-			log.Printf("Warning: Week %d requested but only %d sheets available, using sheet 0",
-				weekData.WeekNumber, len(sheets))
+			log.Printf("Warning: Week %d requested but only %d sheets available, using sheet 0", weekData.WeekNumber, len(sheets))
 			sheetIndex = 0
 		}
 
@@ -267,16 +264,11 @@ func generateExcelFile(req TimecardRequest) ([]byte, error) {
 		}
 	}
 
-	// NOTE: FullCalcOnLoad is NOT a WorkbookProps option in this excelize version.
-	// With Go 1.21 / the current dependency set, we skip forcing a full recalculation on open.
-	// If you upgrade to Go 1.23+ and excelize v2.9.1+, you can do:
-	//   enable := true
-	//   _ = f.SetCalcProps(&excelize.CalcPropsOptions{FullCalcOnLoad: &enable})
-
 	buffer, err := f.WriteToBuffer()
 	if err != nil {
 		return nil, err
 	}
+
 	return buffer.Bytes(), nil
 }
 
@@ -289,7 +281,7 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 	log.Printf("=== Filling %s ===", sheetName)
 	log.Printf("Week start: %s, Entries: %d", weekStart.Format("2006-01-02"), len(weekData.Entries))
 
-	// Header info
+	// Fill header information
 	f.SetCellValue(sheetName, "M2", req.EmployeeName)
 	f.SetCellValue(sheetName, "AJ2", req.PayPeriodNum)
 	f.SetCellValue(sheetName, "AJ3", req.Year)
@@ -299,12 +291,12 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 	f.SetCellValue(sheetName, "AJ4", weekData.WeekLabel)
 
 	// ============================================================
-	// IMPORTANT: Write On Call rate cells used by template formulas
+	// IMPORTANT: Write On Call rate cells that the template formulas reference
 	// AL1 = Daily On Call rate (referenced by AK12 formula)
 	// AM1 = Per Call rate (referenced by AK13 formula)
 	// ============================================================
-	onCallDailyAmount := getOnCallDailyAmount(req)
-	onCallPerCallAmount := getOnCallPerCallAmount(req)
+	onCallDailyAmount := req.GetOnCallDailyAmount()
+	onCallPerCallAmount := req.GetOnCallPerCallAmount()
 
 	f.SetCellValue(sheetName, "AL1", onCallDailyAmount)
 	f.SetCellValue(sheetName, "AM1", onCallPerCallAmount)
@@ -319,11 +311,12 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 	regularCols := getUniqueColumnsForType(weekData.Entries, false)
 	overtimeCols := getUniqueColumnsForType(weekData.Entries, true)
 
-	// Regular headers (Row 4)
+	// Clear and fill regular time headers (Row 4)
 	for i := 0; i < len(regularCols) && i < len(codeColumns); i++ {
 		f.SetCellValue(sheetName, codeColumns[i]+"4", "")
 		f.SetCellValue(sheetName, jobColumns[i]+"4", "")
 	}
+
 	for i, colKey := range regularCols {
 		if i >= len(codeColumns) {
 			break
@@ -337,11 +330,12 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 		f.SetCellValue(sheetName, jobColumns[i]+"4", job)
 	}
 
-	// Overtime headers (Row 15)
+	// Clear and fill overtime headers (Row 15)
 	for i := 0; i < len(overtimeCols) && i < len(codeColumns); i++ {
 		f.SetCellValue(sheetName, codeColumns[i]+"15", "")
 		f.SetCellValue(sheetName, jobColumns[i]+"15", "")
 	}
+
 	for i, colKey := range overtimeCols {
 		if i >= len(codeColumns) {
 			break
@@ -355,7 +349,7 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 		f.SetCellValue(sheetName, jobColumns[i]+"15", job)
 	}
 
-	// Organize entries by date+column
+	// Organize entries by date and column key
 	regularTimeEntries := make(map[string]map[string]float64)
 	overtimeEntries := make(map[string]map[string]float64)
 
@@ -387,7 +381,7 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 		}
 	}
 
-	// Fill each day
+	// Fill hours data for each day
 	for dayOffset := 0; dayOffset < 7; dayOffset++ {
 		currentDate := weekStart.AddDate(0, 0, dayOffset)
 		dateKey := currentDate.Format("2006-01-02")
@@ -404,7 +398,7 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 				if i >= len(jobColumns) {
 					break
 				}
-				if hours, ok := regularHours[k]; ok && hours > 0 {
+				if hours, hasHours := regularHours[k]; hasHours && hours > 0 {
 					cellRef := fmt.Sprintf("%s%d", jobColumns[i], regularRow)
 					f.SetCellValue(sheetName, cellRef, hours)
 				}
@@ -416,7 +410,7 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 				if i >= len(jobColumns) {
 					break
 				}
-				if hours, ok := otHours[k]; ok && hours > 0 {
+				if hours, hasHours := otHours[k]; hasHours && hours > 0 {
 					cellRef := fmt.Sprintf("%s%d", jobColumns[i], overtimeRow)
 					f.SetCellValue(sheetName, cellRef, hours)
 				}
@@ -467,13 +461,15 @@ func getUniqueColumnsForType(entries []Entry, isOvertime bool) []string {
 			result = append(result, k)
 		}
 	}
+
 	return result
 }
 
 func timeToExcelDate(t time.Time) float64 {
 	excelEpoch := time.Date(1899, 12, 30, 0, 0, 0, 0, time.UTC)
 	duration := t.Sub(excelEpoch)
-	return duration.Hours() / 24.0
+	days := duration.Hours() / 24.0
+	return days
 }
 
 func generateBasicExcelFile(req TimecardRequest) ([]byte, error) {
@@ -550,18 +546,19 @@ func generateBasicExcelFile(req TimecardRequest) ([]byte, error) {
 	if onCallCount > 0 {
 		row += 2
 		f.SetCellValue(sheet, fmt.Sprintf("A%d", row), "On Call Daily:")
-		f.SetCellValue(sheet, fmt.Sprintf("E%d", row), getOnCallDailyAmount(req))
+		f.SetCellValue(sheet, fmt.Sprintf("E%d", row), req.GetOnCallDailyAmount())
 		row++
 		f.SetCellValue(sheet, fmt.Sprintf("A%d", row), "# of On Call:")
 		f.SetCellValue(sheet, fmt.Sprintf("B%d", row), onCallCount)
 		f.SetCellValue(sheet, fmt.Sprintf("D%d", row), "Total:")
-		f.SetCellValue(sheet, fmt.Sprintf("E%d", row), getOnCallPerCallAmount(req)*float64(onCallCount))
+		f.SetCellValue(sheet, fmt.Sprintf("E%d", row), req.GetOnCallPerCallAmount()*float64(onCallCount))
 	}
 
 	buffer, err := f.WriteToBuffer()
 	if err != nil {
 		return nil, err
 	}
+
 	return buffer.Bytes(), nil
 }
 
@@ -575,14 +572,22 @@ func sendEmail(to string, cc *string, subject string, body string, attachment []
 	if smtpHost == "" || smtpPort == "" || smtpUser == "" || smtpPass == "" {
 		return fmt.Errorf("SMTP not configured")
 	}
+
 	if fromEmail == "" {
 		fromEmail = smtpUser
 	}
 
-	recipients := splitAndTrim(to)
+	recipients := strings.Split(to, ",")
+	for i := range recipients {
+		recipients[i] = strings.TrimSpace(recipients[i])
+	}
+
 	var ccRecipients []string
 	if cc != nil && *cc != "" {
-		ccRecipients = splitAndTrim(*cc)
+		ccRecipients = strings.Split(*cc, ",")
+		for i := range ccRecipients {
+			ccRecipients[i] = strings.TrimSpace(ccRecipients[i])
+		}
 	}
 
 	allRecipients := append([]string{}, recipients...)
@@ -608,6 +613,7 @@ func sendEmail(to string, cc *string, subject string, body string, attachment []
 
 func buildEmailMessage(from string, to []string, cc []string, subject string, body string, attachment []byte, fileName string) string {
 	boundary := "==BOUNDARY=="
+
 	var buf bytes.Buffer
 
 	buf.WriteString(fmt.Sprintf("From: %s\r\n", from))
@@ -620,7 +626,6 @@ func buildEmailMessage(from string, to []string, cc []string, subject string, bo
 	buf.WriteString(fmt.Sprintf("Content-Type: multipart/mixed; boundary=\"%s\"\r\n", boundary))
 	buf.WriteString("\r\n")
 
-	// Body
 	buf.WriteString(fmt.Sprintf("--%s\r\n", boundary))
 	buf.WriteString("Content-Type: text/plain; charset=\"utf-8\"\r\n")
 	buf.WriteString("Content-Transfer-Encoding: quoted-printable\r\n")
@@ -628,7 +633,6 @@ func buildEmailMessage(from string, to []string, cc []string, subject string, bo
 	buf.WriteString(body)
 	buf.WriteString("\r\n\r\n")
 
-	// Attachment
 	if len(attachment) > 0 {
 		buf.WriteString(fmt.Sprintf("--%s\r\n", boundary))
 		buf.WriteString("Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\r\n")
@@ -649,30 +653,6 @@ func buildEmailMessage(from string, to []string, cc []string, subject string, bo
 	}
 
 	buf.WriteString(fmt.Sprintf("--%s--\r\n", boundary))
+
 	return buf.String()
-}
-
-func splitAndTrim(s string) []string {
-	parts := strings.Split(s, ",")
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		t := strings.TrimSpace(p)
-		if t != "" {
-			out = append(out, t)
-		}
-	}
-	return out
-}
-
-// Optional: parse float envs if you ever want overrides
-func getEnvFloat(key string) (*float64, error) {
-	v := strings.TrimSpace(os.Getenv(key))
-	if v == "" {
-		return nil, nil
-	}
-	f, err := strconv.ParseFloat(v, 64)
-	if err != nil {
-		return nil, err
-	}
-	return &f, nil
 }
