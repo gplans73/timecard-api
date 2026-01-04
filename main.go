@@ -1,4 +1,4 @@
-package main
+\package main
 
 import (
 	"bytes"
@@ -375,11 +375,8 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 	regularCols := getUniqueColumnsForType(weekData.Entries, false, jobNameMap)
 	overtimeCols := getUniqueColumnsForType(weekData.Entries, true, jobNameMap)
 
-	// Clear and fill Regular headers (Row 4)
-	for i := 0; i < len(codeColumns); i++ {
-		f.SetCellValue(sheetName, codeColumns[i]+"4", "")
-		f.SetCellValue(sheetName, jobColumns[i]+"4", "")
-	}
+	// Fill Regular headers (Row 4) - only write to cells we need
+	// Don't clear all cells as it can affect formatting
 	for i, colKey := range regularCols {
 		if i >= len(codeColumns) {
 			break
@@ -402,11 +399,8 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 		log.Printf("  REG header col %d: labour='%s' job='%s' (key='%s')", i, labourToWrite, jobCode, colKey)
 	}
 
-	// Clear and fill Overtime headers (Row 15)
-	for i := 0; i < len(codeColumns); i++ {
-		f.SetCellValue(sheetName, codeColumns[i]+"15", "")
-		f.SetCellValue(sheetName, jobColumns[i]+"15", "")
-	}
+	// Fill Overtime headers (Row 15) - only write to cells we need
+	// Don't clear all cells as it can affect formatting
 	for i, colKey := range overtimeCols {
 		if i >= len(codeColumns) {
 			break
