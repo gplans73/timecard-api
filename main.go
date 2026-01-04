@@ -1,4 +1,4 @@
-\package main
+package main
 
 import (
 	"bytes"
@@ -351,11 +351,8 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 	f.SetCellValue(sheetName, "B4", excelDate)
 	f.SetCellValue(sheetName, "AJ4", weekData.WeekLabel)
 
-	// ============================================================
-	// IMPORTANT: Write On Call rate cells used by template formulas
-	// AL1 = Daily On Call rate (referenced by AK12 formula)
-	// AM1 = Per Call rate (referenced by AK13 formula)
-	// ============================================================
+	// Write On Call rate cells used by template formulas
+	// AL1 = Daily On Call rate, AM1 = Per Call rate
 	onCallDailyAmount := getOnCallDailyAmount(req)
 	onCallPerCallAmount := getOnCallPerCallAmount(req)
 
@@ -364,10 +361,8 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 
 	log.Printf("  On Call rates written: AL1=$%.2f (daily), AM1=$%.2f (perCall)",
 		onCallDailyAmount, onCallPerCallAmount)
-	// ============================================================
 
-	// Column layout: Labour Code columns are C, E, G, I, K, M, O, Q, S, U (odd positions)
-	//                Job columns are D, F, H, J, L, N, P, R, T, V (even positions)
+	// Column layout
 	codeColumns := []string{"C", "E", "G", "I", "K", "M", "O", "Q", "S", "U", "W", "Y", "AA", "AC", "AE", "AG"}
 	jobColumns := []string{"D", "F", "H", "J", "L", "N", "P", "R", "T", "V", "X", "Z", "AB", "AD", "AF", "AH"}
 
@@ -375,21 +370,18 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 	regularCols := getUniqueColumnsForType(weekData.Entries, false, jobNameMap)
 	overtimeCols := getUniqueColumnsForType(weekData.Entries, true, jobNameMap)
 
-	// Fill Regular headers (Row 4) - only write to cells we need
-	// Don't clear all cells as it can affect formatting
+	// Fill Regular headers (Row 4) - only write to cells we need, don't clear others
 	for i, colKey := range regularCols {
 		if i >= len(codeColumns) {
 			break
 		}
 		isNight, jobCode, labourCode, jobName := splitColumnKey(colKey)
 
-		// Determine what to write to the Labour Code column
 		labourToWrite := labourCode
 		if isNight && labourToWrite != "" {
 			labourToWrite = "N" + labourToWrite
 		}
-		// CRITICAL: If this is an On Call job, write "On Call" to the labour code column
-		// so the formula =IF(C4="On Call",...) will match
+		// If this is an On Call job, write "On Call" to the labour code column
 		if strings.EqualFold(jobName, "On Call") {
 			labourToWrite = "On Call"
 		}
@@ -400,7 +392,6 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 	}
 
 	// Fill Overtime headers (Row 15) - only write to cells we need
-	// Don't clear all cells as it can affect formatting
 	for i, colKey := range overtimeCols {
 		if i >= len(codeColumns) {
 			break
@@ -411,7 +402,6 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 		if isNight && labourToWrite != "" {
 			labourToWrite = "N" + labourToWrite
 		}
-		// CRITICAL: If this is an On Call job, write "On Call" to the labour code column
 		if strings.EqualFold(jobName, "On Call") {
 			labourToWrite = "On Call"
 		}
@@ -491,13 +481,11 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 	return nil
 }
 
-// columnKey creates a unique key for grouping entries by job+labour+night+jobName
 func columnKey(e Entry, jobNameMap map[string]string) string {
 	jobCode := strings.TrimSpace(e.JobCode)
 	labourCode := strings.TrimSpace(e.LabourCode)
 	jobName := jobNameMap[jobCode]
 
-	// Include job name in the key so we can extract it later
 	base := fmt.Sprintf("%s|%s|%s", jobCode, labourCode, jobName)
 	if e.IsNightShift {
 		return "N-" + base
@@ -505,7 +493,6 @@ func columnKey(e Entry, jobNameMap map[string]string) string {
 	return base
 }
 
-// splitColumnKey extracts isNight, jobCode, labourCode, and jobName from a column key
 func splitColumnKey(k string) (bool, string, string, string) {
 	isNight := strings.HasPrefix(k, "N-")
 	if isNight {
@@ -527,7 +514,6 @@ func splitColumnKey(k string) (bool, string, string, string) {
 	return isNight, jobCode, labourCode, jobName
 }
 
-// getUniqueColumnsForType returns unique column keys for regular or overtime entries
 func getUniqueColumnsForType(entries []Entry, isOvertime bool, jobNameMap map[string]string) []string {
 	seen := make(map[string]bool)
 	var result []string
@@ -606,7 +592,6 @@ func generateBasicExcelFile(req TimecardRequest) ([]byte, error) {
 		}
 		f.SetCellValue(sheet, fmt.Sprintf("F%d", row), overtimeStr)
 
-		// Check if this is an On Call entry
 		jobName := jobMap[entry.JobCode]
 		if strings.EqualFold(jobName, "On Call") {
 			onCallCount++
@@ -696,7 +681,6 @@ func buildEmailMessage(from string, to []string, cc []string, subject string, bo
 	buf.WriteString(fmt.Sprintf("Content-Type: multipart/mixed; boundary=\"%s\"\r\n", boundary))
 	buf.WriteString("\r\n")
 
-	// Body
 	buf.WriteString(fmt.Sprintf("--%s\r\n", boundary))
 	buf.WriteString("Content-Type: text/plain; charset=\"utf-8\"\r\n")
 	buf.WriteString("Content-Transfer-Encoding: quoted-printable\r\n")
@@ -704,7 +688,6 @@ func buildEmailMessage(from string, to []string, cc []string, subject string, bo
 	buf.WriteString(body)
 	buf.WriteString("\r\n\r\n")
 
-	// Attachment
 	if len(attachment) > 0 {
 		buf.WriteString(fmt.Sprintf("--%s\r\n", boundary))
 		buf.WriteString("Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\r\n")
@@ -740,7 +723,6 @@ func splitAndTrim(s string) []string {
 	return out
 }
 
-// Optional: parse float envs if you ever want overrides
 func getEnvFloat(key string) (*float64, error) {
 	v := strings.TrimSpace(os.Getenv(key))
 	if v == "" {
