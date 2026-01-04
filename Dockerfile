@@ -17,8 +17,14 @@ COPY go.mod go.sum ./
 # Download dependencies
 RUN go mod download
 
-# Copy source code
+# Copy source code (includes template.xlsx if not ignored)
 COPY . .
+
+# Prove template.xlsx exists in the image (fail build if missing)
+RUN ls -lah /app && \
+    ls -lah /app/template.xlsx && \
+    sha256sum /app/template.xlsx && \
+    test -f /app/template.xlsx
 
 # Build the application
 RUN go build -o server .
