@@ -352,11 +352,11 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 	f.SetCellValue(sheetName, "AJ4", weekData.WeekLabel)
 
 	// Write On Call rate cells used by template formulas
-	// AL1 = Daily On Call rate, AM1 = Per Call rate
+	// AM2 = Daily On Call rate, AM1 = Per Call rate
 	onCallDailyAmount := getOnCallDailyAmount(req)
 	onCallPerCallAmount := getOnCallPerCallAmount(req)
 
-	f.SetCellValue(sheetName, "AL1", onCallDailyAmount)
+	f.SetCellValue(sheetName, "AM2", onCallDailyAmount)
 	f.SetCellValue(sheetName, "AM1", onCallPerCallAmount)
 
 	log.Printf("  On Call rates written: AL1=$%.2f (daily), AM1=$%.2f (perCall)",
