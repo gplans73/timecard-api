@@ -343,22 +343,21 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 	}
 
 	// Header info
-	setCellPreserveStyle(f, sheetName, "M2", req.EmployeeName)
-	setCellPreserveStyle(f, sheetName, "AZ2", req.PayPeriodNum)
-	setCellPreserveStyle(f, sheetName, "AJ2", "")
-	setCellPreserveStyle(f, sheetName, "AZ3", req.Year)
-	setCellPreserveStyle(f, sheetName, "AJ3", "")
+	f.SetCellValue(sheetName, "M2", req.EmployeeName)
+	f.SetCellValue(sheetName, "AJ2", req.PayPeriodNum)
+	f.SetCellValue(sheetName, "AJ3", req.Year)
+
 	excelDate := timeToExcelDate(weekStart)
-	setCellPreserveStyle(f, sheetName, "B4", excelDate)
-	setCellPreserveStyle(f, sheetName, "AJ4", weekData.WeekLabel)
+	f.SetCellValue(sheetName, "B4", excelDate)
+	f.SetCellValue(sheetName, "AJ4", weekData.WeekLabel)
 
 	// Write On Call rate cells used by template formulas
 	// AM12 = Daily On Call rate, AM13 = Per Call rate
 	onCallDailyAmount := getOnCallDailyAmount(req)
 	onCallPerCallAmount := getOnCallPerCallAmount(req)
 
-	setCellPreserveStyle(f, sheetName, "AM12", onCallDailyAmount)
-	setCellPreserveStyle(f, sheetName, "AM13", onCallPerCallAmount)
+	f.SetCellValue(sheetName, "AM12", onCallDailyAmount)
+	f.SetCellValue(sheetName, "AM13", onCallPerCallAmount)
 
 	log.Printf("  On Call rates written: AM12=$%.2f (daily), AM13=$%.2f (perCall)",
 		onCallDailyAmount, onCallPerCallAmount)
@@ -387,8 +386,8 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 			labourToWrite = "On Call"
 		}
 
-		setCellPreserveStyle(f, sheetName, codeColumns[i]+"4", labourToWrite)
-		setCellPreserveStyle(f, sheetName, jobColumns[i]+"4", jobCode)
+		f.SetCellValue(sheetName, codeColumns[i]+"4", labourToWrite)
+		f.SetCellValue(sheetName, jobColumns[i]+"4", jobCode)
 		log.Printf("  REG header col %d: labour='%s' job='%s' (key='%s')", i, labourToWrite, jobCode, colKey)
 	}
 
@@ -407,8 +406,8 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 			labourToWrite = "On Call"
 		}
 
-		setCellPreserveStyle(f, sheetName, codeColumns[i]+"15", labourToWrite)
-		setCellPreserveStyle(f, sheetName, jobColumns[i]+"15", jobCode)
+		f.SetCellValue(sheetName, codeColumns[i]+"15", labourToWrite)
+		f.SetCellValue(sheetName, jobColumns[i]+"15", jobCode)
 		log.Printf("  OT header col %d: labour='%s' job='%s' (key='%s')", i, labourToWrite, jobCode, colKey)
 	}
 
@@ -450,8 +449,8 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 		regularRow := 5 + dayOffset
 		overtimeRow := 16 + dayOffset
 
-		setCellPreserveStyle(f, sheetName, fmt.Sprintf("B%d", regularRow), excelDateSerial)
-		setCellPreserveStyle(f, sheetName, fmt.Sprintf("B%d", overtimeRow), excelDateSerial)
+		f.SetCellValue(sheetName, fmt.Sprintf("B%d", regularRow), excelDateSerial)
+		f.SetCellValue(sheetName, fmt.Sprintf("B%d", overtimeRow), excelDateSerial)
 
 		if regularHours, exists := regularTimeEntries[dateKey]; exists {
 			for i, k := range regularCols {
@@ -460,7 +459,7 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 				}
 				if hours, ok := regularHours[k]; ok && hours > 0 {
 					cellRef := fmt.Sprintf("%s%d", jobColumns[i], regularRow)
-					setCellPreserveStyle(f, sheetName, cellRef, hours)
+					f.SetCellValue(sheetName, cellRef, hours)
 				}
 			}
 		}
@@ -472,7 +471,7 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 				}
 				if hours, ok := otHours[k]; ok && hours > 0 {
 					cellRef := fmt.Sprintf("%s%d", jobColumns[i], overtimeRow)
-					setCellPreserveStyle(f, sheetName, cellRef, hours)
+					f.SetCellValue(sheetName, cellRef, hours)
 				}
 			}
 		}
@@ -536,14 +535,6 @@ func timeToExcelDate(t time.Time) float64 {
 	excelEpoch := time.Date(1899, 12, 30, 0, 0, 0, 0, time.UTC)
 	duration := t.Sub(excelEpoch)
 	return duration.Hours() / 24.0
-}
-
-// setCellPreserveStyle sets a cell value but re-applies the existing style afterwards.
-// This prevents Excelize from accidentally stripping borders/formatting on some templates.
-func setCellPreserveStyle(f *excelize.File, sheet, cell string, value interface{}) {
-	styleID, _ := f.GetCellStyle(sheet, cell)
-	_ = f.SetCellValue(sheet, cell, value)
-	_ = f.SetCellStyle(sheet, cell, cell, styleID)
 }
 
 func generateBasicExcelFile(req TimecardRequest) ([]byte, error) {
