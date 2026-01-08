@@ -31,6 +31,15 @@ func setCellPreserveStyle(f *excelize.File, sheet, cell string, value any) error
 	return nil
 }
 
+
+// removeCalcChain removes xl/calcChain.xml if present.
+// Some Excelize versions provide DeleteCalcChain(), but others do not.
+// Removing calcChain helps Excel keep formulas/formatting consistent when opening.
+func removeCalcChain(f *excelize.File) {
+    // DeletePart is available across a wide range of Excelize versions.
+    _ = f.DeletePart("xl/calcChain.xml")
+}
+
 // Data structures for timecard requests
 type TimecardRequest struct {
 	EmployeeName        string       `json:"employee_name"`
@@ -334,7 +343,7 @@ func generateExcelFile(req TimecardRequest) ([]byte, error) {
 		log.Printf("MARKER AFTER fill: sheet=%s A3=%q AD3=%q", sheetName, a3After, ad3After)
 	}
 
-	f.DeleteCalcChain()
+	removeCalcChain(f)
 	buffer, err := f.WriteToBuffer()
 	if err != nil {
 		return nil, err
@@ -398,8 +407,9 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 			labourToWrite = "On Call"
 		}
 
-		f.SetCellValue(sheetName, codeColumns[i]+"4", labourToWrite)
-		f.SetCellValue(sheetName, jobColumns[i]+"4", jobCode)
+		// Preserve template borders/styles when writing headers
+		_ = setCellPreserveStyle(f, sheetName, codeColumns[i]+"4", labourToWrite)
+		_ = setCellPreserveStyle(f, sheetName, jobColumns[i]+"4", jobCode)
 		log.Printf("  REG header col %d: labour='%s' job='%s' (key='%s')", i, labourToWrite, jobCode, colKey)
 	}
 
@@ -418,8 +428,9 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 			labourToWrite = "On Call"
 		}
 
-		f.SetCellValue(sheetName, codeColumns[i]+"15", labourToWrite)
-		f.SetCellValue(sheetName, jobColumns[i]+"15", jobCode)
+		// Preserve template borders/styles when writing OT headers
+		_ = setCellPreserveStyle(f, sheetName, codeColumns[i]+"15", labourToWrite)
+		_ = setCellPreserveStyle(f, sheetName, jobColumns[i]+"15", jobCode)
 		log.Printf("  OT header col %d: labour='%s' job='%s' (key='%s')", i, labourToWrite, jobCode, colKey)
 	}
 
@@ -461,8 +472,9 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 		regularRow := 5 + dayOffset
 		overtimeRow := 16 + dayOffset
 
-		f.SetCellValue(sheetName, fmt.Sprintf("B%d", regularRow), excelDateSerial)
-		f.SetCellValue(sheetName, fmt.Sprintf("B%d", overtimeRow), excelDateSerial)
+		// Preserve template borders/styles for the date column as well
+		_ = setCellPreserveStyle(f, sheetName, fmt.Sprintf("B%d", regularRow), excelDateSerial)
+		_ = setCellPreserveStyle(f, sheetName, fmt.Sprintf("B%d", overtimeRow), excelDateSerial)
 
 		if regularHours, exists := regularTimeEntries[dateKey]; exists {
 			for i, k := range regularCols {
@@ -631,7 +643,7 @@ func generateBasicExcelFile(req TimecardRequest) ([]byte, error) {
 		f.SetCellValue(sheet, fmt.Sprintf("E%d", row), getOnCallPerCallAmount(req)*float64(onCallCount))
 	}
 
-	f.DeleteCalcChain()
+	removeCalcChain(f)
 	buffer, err := f.WriteToBuffer()
 	if err != nil {
 		return nil, err
