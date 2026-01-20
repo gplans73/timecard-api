@@ -1,7 +1,7 @@
-# Use an image that supports LibreOffice
+# Build stage
 FROM golang:1.21-alpine
 
-# Install LibreOffice and required dependencies
+# Install LibreOffice and dependencies for potential PDF conversion
 RUN apk add --no-cache \
     libreoffice \
     openjdk11-jre \
@@ -14,13 +14,13 @@ WORKDIR /app
 # Copy go mod files
 COPY go.mod go.sum ./
 
-# Download dependencies
-RUN go mod download
+# Download dependencies and tidy up
+RUN go mod download && go mod tidy
 
-# Copy source code (includes template.xlsx if not ignored)
+# Copy source code
 COPY . .
 
-# Prove template.xlsx exists in the image (fail build if missing)
+# Verify template exists
 RUN ls -lah /app && \
     ls -lah /app/template.xlsx && \
     sha256sum /app/template.xlsx && \
@@ -30,7 +30,7 @@ RUN ls -lah /app && \
 RUN go build -o server .
 
 # Expose port
-EXPOSE 8080
+EXPOSE 10000
 
-# Run the application
+# Run the server
 CMD ["./server"]
