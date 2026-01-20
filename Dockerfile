@@ -21,13 +21,11 @@ ENV GOSUMDB=sum.golang.org
 # Copy go.mod
 COPY go.mod ./
 
-# Clear any cached modules and download fresh
-RUN rm -rf /go/pkg/mod/cache/vcs/* && \
-    go mod download -x && \
-    go mod tidy
-
-# Copy source code
+# Copy source code first (needed for go mod tidy to work)
 COPY . .
+
+# Download dependencies and generate go.sum
+RUN go mod download && go mod tidy
 
 # Verify template exists
 RUN ls -lah /app && \
