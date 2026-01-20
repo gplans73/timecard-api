@@ -1,8 +1,9 @@
 # Build stage
 FROM golang:1.21-alpine
 
-# Install LibreOffice and dependencies for potential PDF conversion
+# Install git and other dependencies
 RUN apk add --no-cache \
+    git \
     libreoffice \
     openjdk11-jre \
     ttf-dejavu \
