@@ -32,15 +32,11 @@ func setCellPreserveStyle(f *excelize.File, sheet, cell string, value any) error
 }
 
 // removeCalcChain removes xl/calcChain.xml if present.
-// This requires excelize v2.8.0+ which has the DeletePart method.
-// Removing calcChain helps Excel keep formulas/formatting consistent when opening.
+// Note: In excelize v2.9.0+, calcChain is handled automatically.
+// This function is kept for compatibility but does nothing in newer versions.
 func removeCalcChain(f *excelize.File) {
-	// DeletePart is available in excelize v2.8.0+
-	// If using an older version, this call will fail to compile - upgrade excelize
-	if err := f.DeletePart("xl/calcChain.xml"); err != nil {
-		// Ignore errors - calcChain may not exist in all templates
-		log.Printf("Note: Could not delete calcChain (may not exist): %v", err)
-	}
+	// calcChain removal is handled automatically by excelize v2.9.0+
+	// No manual deletion needed
 }
 
 // =============================================================================
