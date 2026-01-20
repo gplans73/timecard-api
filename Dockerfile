@@ -12,6 +12,9 @@ RUN apk add --no-cache \
 # Set working directory
 WORKDIR /app
 
+# Use Go module proxy to avoid git authentication issues
+ENV GOPROXY=https://proxy.golang.org,direct
+
 # Copy only go.mod (not go.sum - let it regenerate)
 COPY go.mod ./
 
