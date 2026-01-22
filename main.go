@@ -57,36 +57,61 @@ func forceRecalcAndRemoveCalcChain(xlsx []byte) ([]byte, error) {
 			continue
 		}
 
-		rc, err := zf.Open()
-		if err != nil {
-			_ = zw.Close()
-			return nil, fmt.Errorf("read %s: %w", name, err)
-		}
-		b, err := io.ReadAll(rc)
-		_ = rc.Close()
-		if err != nil {
-			_ = zw.Close()
-			return nil, fmt.Errorf("read %s: %w", name, err)
-		}
+		// For files we need to modify, read into memory
+		needsModification := name == "xl/workbook.xml" || name == "xl/_rels/workbook.xml.rels" || name == "[Content_Types].xml"
 
-		switch name {
-		case "xl/workbook.xml":
-			b = ensureCalcPrAutoFull(b)
-		case "xl/_rels/workbook.xml.rels":
-			b = removeCalcChainRelationships(b)
-		case "[Content_Types].xml":
-			b = removeCalcChainContentType(b)
-		}
+		if needsModification {
+			rc, err := zf.Open()
+			if err != nil {
+				_ = zw.Close()
+				return nil, fmt.Errorf("read %s: %w", name, err)
+			}
+			b, err := io.ReadAll(rc)
+			_ = rc.Close()
+			if err != nil {
+				_ = zw.Close()
+				return nil, fmt.Errorf("read %s: %w", name, err)
+			}
 
-		hdr := zf.FileHeader // copy
-		w, err := zw.CreateHeader(&hdr)
-		if err != nil {
-			_ = zw.Close()
-			return nil, fmt.Errorf("write %s: %w", name, err)
-		}
-		if _, err := w.Write(b); err != nil {
-			_ = zw.Close()
-			return nil, fmt.Errorf("write %s: %w", name, err)
+			switch name {
+			case "xl/workbook.xml":
+				b = ensureCalcPrAutoFull(b)
+			case "xl/_rels/workbook.xml.rels":
+				b = removeCalcChainRelationships(b)
+			case "[Content_Types].xml":
+				b = removeCalcChainContentType(b)
+			}
+
+			hdr := zf.FileHeader // copy
+			w, err := zw.CreateHeader(&hdr)
+			if err != nil {
+				_ = zw.Close()
+				return nil, fmt.Errorf("write %s: %w", name, err)
+			}
+			if _, err := w.Write(b); err != nil {
+				_ = zw.Close()
+				return nil, fmt.Errorf("write %s: %w", name, err)
+			}
+		} else {
+			// For files we don't modify (like styles.xml), use io.Copy to preserve exact bytes
+			rc, err := zf.Open()
+			if err != nil {
+				_ = zw.Close()
+				return nil, fmt.Errorf("read %s: %w", name, err)
+			}
+			hdr := zf.FileHeader // copy
+			w, err := zw.CreateHeader(&hdr)
+			if err != nil {
+				rc.Close()
+				_ = zw.Close()
+				return nil, fmt.Errorf("write %s: %w", name, err)
+			}
+			if _, err := io.Copy(w, rc); err != nil {
+				rc.Close()
+				_ = zw.Close()
+				return nil, fmt.Errorf("copy %s: %w", name, err)
+			}
+			rc.Close()
 		}
 	}
 
@@ -345,9 +370,6 @@ func generateTimecardHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Post-process: remove calcChain.xml and force Excel to recalculate on open
-	// TEMPORARILY DISABLED to test if this is corrupting styles.xml
-	// TODO: Re-enable once we confirm the root cause
-	/*
 	excelData, err = forceRecalcAndRemoveCalcChain(excelData)
 	if err != nil {
 		log.Printf("Warning: Could not post-process Excel file: %v", err)
@@ -355,8 +377,6 @@ func generateTimecardHandler(w http.ResponseWriter, r *http.Request) {
 	} else {
 		log.Printf("Post-processed Excel: removed calcChain, added fullCalcOnLoad")
 	}
-	*/
-	log.Printf("Post-processing temporarily disabled to preserve formatting")
 
 	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"timecard_%s.xlsx\"", req.EmployeeName))
@@ -389,9 +409,6 @@ func emailTimecardHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Post-process: remove calcChain.xml and force Excel to recalculate on open
-	// TEMPORARILY DISABLED to test if this is corrupting styles.xml
-	// TODO: Re-enable once we confirm the root cause
-	/*
 	excelData, err = forceRecalcAndRemoveCalcChain(excelData)
 	if err != nil {
 		log.Printf("Warning: Could not post-process Excel file for email: %v", err)
@@ -399,8 +416,6 @@ func emailTimecardHandler(w http.ResponseWriter, r *http.Request) {
 	} else {
 		log.Printf("Post-processed Excel for email: removed calcChain, added fullCalcOnLoad")
 	}
-	*/
-	log.Printf("Post-processing temporarily disabled for email to preserve formatting")
 
 	err = sendEmail(req.To, req.CC, req.Subject, req.Body, excelData, req.EmployeeName)
 	if err != nil {
