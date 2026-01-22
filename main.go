@@ -69,6 +69,7 @@ func forceRecalcAndRemoveCalcChain(xlsx []byte) ([]byte, error) {
 			return nil, fmt.Errorf("read %s: %w", name, err)
 		}
 
+		// Only modify specific files, preserve all others (including styles.xml) exactly as-is
 		switch name {
 		case "xl/workbook.xml":
 			b = ensureCalcPrAutoFull(b)
@@ -76,9 +77,11 @@ func forceRecalcAndRemoveCalcChain(xlsx []byte) ([]byte, error) {
 			b = removeCalcChainRelationships(b)
 		case "[Content_Types].xml":
 			b = removeCalcChainContentType(b)
+		// All other files (including styles.xml, worksheets, etc.) are copied unchanged
 		}
 
-		hdr := zf.FileHeader // copy
+		// Copy file header to preserve compression method and other metadata
+		hdr := zf.FileHeader
 		w, err := zw.CreateHeader(&hdr)
 		if err != nil {
 			_ = zw.Close()
@@ -348,12 +351,26 @@ func generateTimecardHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Post-process: remove calcChain.xml and force Excel to recalculate on open
-	excelData, err = forceRecalcAndRemoveCalcChain(excelData)
-	if err != nil {
-		log.Printf("Warning: Could not post-process Excel file: %v", err)
-		// Continue anyway - the file should still be usable
+	// Only do this if the file is valid (check for styles.xml presence)
+	if hasStylesXML(excelData) {
+		excelData, err = forceRecalcAndRemoveCalcChain(excelData)
+		if err != nil {
+			log.Printf("Warning: Could not post-process Excel file: %v", err)
+			// Continue anyway - the file should still be usable
+		} else {
+			log.Printf("Post-processed Excel: removed calcChain, added fullCalcOnLoad")
+			// Verify styles.xml still exists after post-processing
+			if !hasStylesXML(excelData) {
+				log.Printf("ERROR: styles.xml was lost during post-processing! Skipping post-processing.")
+				// Re-generate without post-processing
+				excelData, err = generateExcelFile(req)
+				if err != nil {
+					return nil, err
+				}
+			}
+		}
 	} else {
-		log.Printf("Post-processed Excel: removed calcChain, added fullCalcOnLoad")
+		log.Printf("Warning: Excel file missing styles.xml before post-processing, skipping")
 	}
 
 	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
@@ -465,22 +482,11 @@ func generateExcelFile(req TimecardRequest) ([]byte, error) {
 	defer f.Close()
 
 	// Insert logo if provided - keep temp file alive until after WriteToBuffer
+	// NOTE: Logo insertion is done AFTER filling data to avoid corrupting styles.xml
 	var tmpLogoFile string
 	if req.CompanyLogoBase64 != nil && *req.CompanyLogoBase64 != "" {
-		var err error
-		tmpLogoFile, err = insertLogoIntoExcel(f, *req.CompanyLogoBase64)
-		if err != nil {
-			log.Printf("Warning: Could not insert logo into Excel: %v", err)
-			// Continue without logo
-		} else {
-			log.Printf("Logo inserted into Excel successfully")
-			// Clean up temp file after we're done writing
-			defer func() {
-				if tmpLogoFile != "" {
-					os.Remove(tmpLogoFile)
-				}
-			}()
-		}
+		// We'll insert the logo after all data is filled to minimize risk of corruption
+		tmpLogoFile = "" // Will be set later
 	}
 
 	// Build job name lookup map: jobNumber -> jobName
@@ -571,10 +577,32 @@ func generateExcelFile(req TimecardRequest) ([]byte, error) {
 		ad3After, _ := f.GetCellValue(sheetName, "AD3")
 		log.Printf("MARKER AFTER fill: sheet=%s A3=%q AD3=%q", sheetName, a3After, ad3After)
 	}
+
+	// Insert logo AFTER all data is filled to avoid corrupting styles.xml
+	// This ensures all cell styles are preserved before we add the image
+	if req.CompanyLogoBase64 != nil && *req.CompanyLogoBase64 != "" {
+		var err error
+		tmpLogoFile, err = insertLogoIntoExcel(f, *req.CompanyLogoBase64)
+		if err != nil {
+			log.Printf("Warning: Could not insert logo into Excel (skipping to preserve formatting): %v", err)
+			// Continue without logo - preserving formatting is more important
+		} else {
+			log.Printf("Logo inserted into Excel successfully")
+		}
+	}
+
+	// Write to buffer - temp file must exist during this call
 	buffer, err := f.WriteToBuffer()
+	
+	// Clean up temp file immediately after WriteToBuffer completes
+	if tmpLogoFile != "" {
+		os.Remove(tmpLogoFile)
+	}
+	
 	if err != nil {
 		return nil, err
 	}
+
 	return buffer.Bytes(), nil
 }
 
@@ -607,7 +635,9 @@ func insertLogoIntoExcel(f *excelize.File, logoBase64 string) (string, error) {
 	}
 
 	// Get all sheets and insert logo into each
+	// Only add to sheets that actually have data to minimize risk of corruption
 	sheets := f.GetSheetList()
+	insertedCount := 0
 	for _, sheetName := range sheets {
 		// Insert logo at A1 with a reasonable size
 		// Scale to 50% of original size and position with small offset
@@ -619,9 +649,18 @@ func insertLogoIntoExcel(f *excelize.File, logoBase64 string) (string, error) {
 		})
 		if err != nil {
 			log.Printf("Warning: Could not add logo to sheet %s: %v", sheetName, err)
+			// If we can't add to any sheet, return error to skip logo entirely
+			if insertedCount == 0 {
+				return tmpFileName, fmt.Errorf("failed to insert logo into any sheet: %w", err)
+			}
 			continue
 		}
+		insertedCount++
 		log.Printf("Logo inserted into sheet %s", sheetName)
+	}
+	
+	if insertedCount == 0 {
+		return tmpFileName, fmt.Errorf("logo insertion failed for all sheets")
 	}
 
 	// Return the temp file name so caller can clean it up after WriteToBuffer
@@ -1081,4 +1120,18 @@ func getEnvFloat(key string) (*float64, error) {
 		return nil, err
 	}
 	return &f, nil
+}
+
+// hasStylesXML checks if the Excel file contains styles.xml
+func hasStylesXML(xlsx []byte) bool {
+	zr, err := zip.NewReader(bytes.NewReader(xlsx), int64(len(xlsx)))
+	if err != nil {
+		return false
+	}
+	for _, zf := range zr.File {
+		if zf.Name == "xl/styles.xml" {
+			return true
+		}
+	}
+	return false
 }
