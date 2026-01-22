@@ -7,7 +7,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"github.com/xuri/excelize/v2"
 	"io"
 	"log"
 	"net/http"
@@ -17,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/xuri/excelize/v2"
 )
 
 // setCellPreserveStyle writes a value into a cell while preserving the cell's original style (borders, number formats, alignment, etc).
@@ -149,7 +150,6 @@ func buildCalcPrElement(existingAttrs string) string {
 
 	return `<calcPr` + attrs + `/>`
 }
-
 
 func removeCalcChainRelationships(b []byte) []byte {
 	s := string(b)
@@ -598,9 +598,9 @@ func insertLogoIntoExcel(f *excelize.File, logoBase64 string) error {
 	for _, sheetName := range sheets {
 		// Insert logo at A1 with a reasonable size
 		// Scale to 50% of original size and position with small offset
-		err := f.AddPicture(sheetName, "A1", tmpFileName, "png", &excelize.GraphicOptions{
-			ScaleX: 0.5, // Scale down to 50% of original size
-			ScaleY: 0.5,
+		err := f.AddPicture(sheetName, "A1", tmpFileName, &excelize.GraphicOptions{
+			ScaleX:  0.5, // Scale down to 50% of original size
+			ScaleY:  0.5,
 			OffsetX: 10, // Small offset in pixels
 			OffsetY: 10,
 		})
@@ -933,16 +933,16 @@ func generatePDFFile(req TimecardRequest) ([]byte, error) {
 	// Create a simple PDF structure
 	// This is a minimal PDF implementation that creates a basic PDF document
 	// For better formatting, you should use a PDF library like gofpdf
-	
+
 	var pdf bytes.Buffer
-	
+
 	// PDF Header
 	pdf.WriteString("%PDF-1.4\n")
-	
+
 	// For a proper implementation, you would:
 	// 1. Install a PDF library: go get github.com/jung-kurt/gofpdf
 	// 2. Use it to create formatted PDFs with the logo, tables, etc.
-	// 
+	//
 	// Example with gofpdf:
 	//   pdf := gofpdf.New("L", "mm", "A4", "")
 	//   pdf.AddPage()
@@ -954,7 +954,7 @@ func generatePDFFile(req TimecardRequest) ([]byte, error) {
 	//   }
 	//   // Add timecard content...
 	//   return pdf.Output(&pdf), nil
-	
+
 	// For now, return a simple error message indicating PDF generation needs implementation
 	// You can implement this using your preferred PDF library
 	return nil, fmt.Errorf("PDF generation is not yet fully implemented. Please use Excel output or implement PDF generation using a library like github.com/jung-kurt/gofpdf")
