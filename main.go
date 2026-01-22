@@ -154,14 +154,14 @@ func buildCalcPrElement(existingAttrs string) string {
 func removeCalcChainRelationships(b []byte) []byte {
 	s := string(b)
 	// Remove any relationship entries that reference calcChain (by Type or Target)
-	re := regexp.MustCompile(`(?s)<Relationship[^>]*(?:calcChain)[^>]*/>`)
+	re := regexp.MustCompile(`(?s)<Relationship[^>]*(?:calcChain)[^>]*/>`)
 	s = re.ReplaceAllString(s, "")
 	return []byte(s)
 }
 
 func removeCalcChainContentType(b []byte) []byte {
 	s := string(b)
-	re := regexp.MustCompile(`(?s)<Override[^>]*PartName="/xl/calcChain\.xml"[^>]*/>`)
+	re := regexp.MustCompile(`(?s)<Override[^>]*PartName="/xl/calcChain\.xml"[^>]*/>`)
 	s = re.ReplaceAllString(s, "")
 	return []byte(s)
 }
@@ -184,6 +184,7 @@ type TimecardRequest struct {
 	LabourCodes         []LabourCode `json:"labour_codes,omitempty"`
 	OnCallDailyAmount   *float64     `json:"on_call_daily_amount,omitempty"`
 	OnCallPerCallAmount *float64     `json:"on_call_per_call_amount,omitempty"`
+	CompanyLogoBase64   *string      `json:"company_logo_base64,omitempty"`
 }
 
 // Job represents a job/project with its number and display name
@@ -240,6 +241,7 @@ func main() {
 	http.HandleFunc("/health", healthHandler)
 	http.HandleFunc("/api/generate-timecard", corsMiddleware(generateTimecardHandler))
 	http.HandleFunc("/api/email-timecard", corsMiddleware(emailTimecardHandler))
+	http.HandleFunc("/api/generate-pdf-timecard", corsMiddleware(generatePDFTimecardHandler))
 
 	log.Printf("Server starting on port %s", port)
 	if err := http.ListenAndServe(":"+port, nil); err != nil {
@@ -333,6 +335,9 @@ func generateTimecardHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Printf("On-Call Daily Amount: $%.2f, Per-Call Amount: $%.2f",
 		getOnCallDailyAmount(req), getOnCallPerCallAmount(req))
+	if req.CompanyLogoBase64 != nil {
+		log.Printf("Company logo provided: %d bytes (base64)", len(*req.CompanyLogoBase64))
+	}
 	log.Printf("===================")
 
 	excelData, err := generateExcelFile(req)
@@ -406,6 +411,36 @@ func emailTimecardHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
+func generatePDFTimecardHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req TimecardRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Printf("Error decoding request: %v", err)
+		http.Error(w, fmt.Sprintf("Invalid request: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	log.Printf("Generating PDF timecard for %s", req.EmployeeName)
+
+	pdfData, err := generatePDFFile(req)
+	if err != nil {
+		log.Printf("Error generating PDF: %v", err)
+		http.Error(w, fmt.Sprintf("Error generating PDF timecard: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/pdf")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"timecard_%s.pdf\"", req.EmployeeName))
+	w.WriteHeader(http.StatusOK)
+	w.Write(pdfData)
+
+	log.Printf("Successfully generated PDF timecard (%d bytes)", len(pdfData))
+}
+
 func getOnCallDailyAmount(req TimecardRequest) float64 {
 	if req.OnCallDailyAmount != nil {
 		return *req.OnCallDailyAmount
@@ -428,6 +463,16 @@ func generateExcelFile(req TimecardRequest) ([]byte, error) {
 		return generateBasicExcelFile(req)
 	}
 	defer f.Close()
+
+	// Insert logo if provided
+	if req.CompanyLogoBase64 != nil && *req.CompanyLogoBase64 != "" {
+		if err := insertLogoIntoExcel(f, *req.CompanyLogoBase64); err != nil {
+			log.Printf("Warning: Could not insert logo into Excel: %v", err)
+			// Continue without logo
+		} else {
+			log.Printf("Logo inserted into Excel successfully")
+		}
+	}
 
 	// Build job name lookup map: jobNumber -> jobName
 	jobNameMap := make(map[string]string)
@@ -522,6 +567,51 @@ func generateExcelFile(req TimecardRequest) ([]byte, error) {
 		return nil, err
 	}
 	return buffer.Bytes(), nil
+}
+
+// insertLogoIntoExcel inserts a logo image into the Excel file
+// The logo is inserted at cell A1 (top-left corner) with appropriate sizing
+func insertLogoIntoExcel(f *excelize.File, logoBase64 string) error {
+	// Decode base64 logo
+	logoData, err := base64.StdEncoding.DecodeString(logoBase64)
+	if err != nil {
+		return fmt.Errorf("failed to decode base64 logo: %w", err)
+	}
+
+	// Create a temporary file to store the logo image
+	tmpFile, err := os.CreateTemp("", "logo_*.png")
+	if err != nil {
+		return fmt.Errorf("failed to create temp file: %w", err)
+	}
+	tmpFileName := tmpFile.Name()
+	defer os.Remove(tmpFileName) // Clean up temp file
+
+	// Write logo data to temp file
+	if _, err := tmpFile.Write(logoData); err != nil {
+		tmpFile.Close()
+		return fmt.Errorf("failed to write logo to temp file: %w", err)
+	}
+	tmpFile.Close()
+
+	// Get all sheets and insert logo into each
+	sheets := f.GetSheetList()
+	for _, sheetName := range sheets {
+		// Insert logo at A1 with a reasonable size
+		// Scale to 50% of original size and position with small offset
+		err := f.AddPicture(sheetName, "A1", tmpFileName, "png", &excelize.GraphicOptions{
+			ScaleX: 0.5, // Scale down to 50% of original size
+			ScaleY: 0.5,
+			OffsetX: 10, // Small offset in pixels
+			OffsetY: 10,
+		})
+		if err != nil {
+			log.Printf("Warning: Could not add logo to sheet %s: %v", sheetName, err)
+			continue
+		}
+		log.Printf("Logo inserted into sheet %s", sheetName)
+	}
+
+	return nil
 }
 
 func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, weekData WeekData, weekNum int, jobNameMap map[string]string) error {
@@ -834,6 +924,40 @@ func generateBasicExcelFile(req TimecardRequest) ([]byte, error) {
 		return nil, err
 	}
 	return buffer.Bytes(), nil
+}
+
+// generatePDFFile generates a PDF version of the timecard
+// Note: This is a basic implementation. For production use with better formatting,
+// consider using github.com/jung-kurt/gofpdf or github.com/signintech/gopdf
+func generatePDFFile(req TimecardRequest) ([]byte, error) {
+	// Create a simple PDF structure
+	// This is a minimal PDF implementation that creates a basic PDF document
+	// For better formatting, you should use a PDF library like gofpdf
+	
+	var pdf bytes.Buffer
+	
+	// PDF Header
+	pdf.WriteString("%PDF-1.4\n")
+	
+	// For a proper implementation, you would:
+	// 1. Install a PDF library: go get github.com/jung-kurt/gofpdf
+	// 2. Use it to create formatted PDFs with the logo, tables, etc.
+	// 
+	// Example with gofpdf:
+	//   pdf := gofpdf.New("L", "mm", "A4", "")
+	//   pdf.AddPage()
+	//   if req.CompanyLogoBase64 != nil {
+	//     // Insert logo
+	//     logoData, _ := base64.StdEncoding.DecodeString(*req.CompanyLogoBase64)
+	//     pdf.RegisterImageOptionsReader("logo", gofpdf.ImageOptions{ImageType: "PNG"}, bytes.NewReader(logoData))
+	//     pdf.Image("logo", 10, 10, 50, 0, false, "", 0, "")
+	//   }
+	//   // Add timecard content...
+	//   return pdf.Output(&pdf), nil
+	
+	// For now, return a simple error message indicating PDF generation needs implementation
+	// You can implement this using your preferred PDF library
+	return nil, fmt.Errorf("PDF generation is not yet fully implemented. Please use Excel output or implement PDF generation using a library like github.com/jung-kurt/gofpdf")
 }
 
 func sendEmail(to string, cc *string, subject string, body string, attachment []byte, employeeName string) error {
