@@ -115,18 +115,16 @@ func forceRecalcAndRemoveCalcChain(xlsx []byte) ([]byte, error) {
 			hdr := zf.FileHeader
 			w, err := zw.CreateRaw(&hdr)
 			if err != nil {
-				rc.Close()
 				_ = zw.Close()
 				return nil, fmt.Errorf("create raw %s: %w", name, err)
 			}
 			
 			// Copy raw compressed bytes
+			// Note: OpenRaw() returns io.Reader (not io.ReadCloser), so no Close() needed
 			if _, err := io.CopyN(w, rc, compressedSize); err != nil {
-				rc.Close()
 				_ = zw.Close()
 				return nil, fmt.Errorf("copy raw %s: %w", name, err)
 			}
-			rc.Close()
 		}
 	}
 
