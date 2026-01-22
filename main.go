@@ -134,6 +134,101 @@ func forceRecalcAndRemoveCalcChain(xlsx []byte) ([]byte, error) {
 	return out.Bytes(), nil
 }
 
+// extractStylesXMLFromTemplate extracts the original styles.xml from the template file
+// This preserves the exact formatting that works before excelize potentially corrupts it
+func extractStylesXMLFromTemplate(templatePath string) ([]byte, error) {
+	templateData, err := os.ReadFile(templatePath)
+	if err != nil {
+		return nil, fmt.Errorf("read template: %w", err)
+	}
+	
+	zr, err := zip.NewReader(bytes.NewReader(templateData), int64(len(templateData)))
+	if err != nil {
+		return nil, fmt.Errorf("open template zip: %w", err)
+	}
+	
+	for _, zf := range zr.File {
+		if zf.Name == "xl/styles.xml" {
+			rc, err := zf.Open()
+			if err != nil {
+				return nil, fmt.Errorf("open styles.xml: %w", err)
+			}
+			defer rc.Close()
+			
+			data, err := io.ReadAll(rc)
+			if err != nil {
+				return nil, fmt.Errorf("read styles.xml: %w", err)
+			}
+			return data, nil
+		}
+	}
+	
+	return nil, fmt.Errorf("styles.xml not found in template")
+}
+
+// restoreStylesXML replaces the styles.xml in the Excel file with the original from the template
+func restoreStylesXML(excelData []byte, originalStylesXML []byte) ([]byte, error) {
+	zr, err := zip.NewReader(bytes.NewReader(excelData), int64(len(excelData)))
+	if err != nil {
+		return nil, fmt.Errorf("open excel zip: %w", err)
+	}
+	
+	var out bytes.Buffer
+	zw := zip.NewWriter(&out)
+	
+	for _, zf := range zr.File {
+		if zf.Name == "xl/styles.xml" {
+			// Replace with original styles.xml
+			hdr := zf.FileHeader
+			hdr.Method = zip.Store // Use Store (no compression) for XML
+			w, err := zw.CreateHeader(&hdr)
+			if err != nil {
+				_ = zw.Close()
+				return nil, fmt.Errorf("create styles.xml: %w", err)
+			}
+			if _, err := w.Write(originalStylesXML); err != nil {
+				_ = zw.Close()
+				return nil, fmt.Errorf("write styles.xml: %w", err)
+			}
+		} else {
+			// Copy all other files as-is using raw copy to preserve compression
+			if zf.Name == "xl/calcChain.xml" {
+				continue // Skip calcChain
+			}
+			
+			// Use raw copy for unmodified files to preserve exact compression
+			rc, err := zf.OpenRaw()
+			if err != nil {
+				_ = zw.Close()
+				return nil, fmt.Errorf("open raw %s: %w", zf.Name, err)
+			}
+			
+			compressedSize := int64(zf.CompressedSize64)
+			if compressedSize == 0 {
+				compressedSize = int64(zf.CompressedSize)
+			}
+			
+			hdr := zf.FileHeader
+			w, err := zw.CreateRaw(&hdr)
+			if err != nil {
+				_ = zw.Close()
+				return nil, fmt.Errorf("create raw %s: %w", zf.Name, err)
+			}
+			
+			if _, err := io.CopyN(w, rc, compressedSize); err != nil {
+				_ = zw.Close()
+				return nil, fmt.Errorf("copy raw %s: %w", zf.Name, err)
+			}
+		}
+	}
+	
+	if err := zw.Close(); err != nil {
+		return nil, fmt.Errorf("finalize zip: %w", err)
+	}
+	
+	return out.Bytes(), nil
+}
+
 func ensureCalcPrAutoFull(b []byte) []byte {
 	s := string(b)
 
@@ -501,6 +596,15 @@ func getOnCallPerCallAmount(req TimecardRequest) float64 {
 
 func generateExcelFile(req TimecardRequest) ([]byte, error) {
 	templatePath := "template.xlsx"
+	
+	// Extract original styles.xml from template BEFORE excelize modifies it
+	// This preserves the exact formatting that works
+	originalStylesXML, err := extractStylesXMLFromTemplate(templatePath)
+	if err != nil {
+		log.Printf("Warning: Could not extract styles.xml from template: %v (continuing anyway)", err)
+		originalStylesXML = nil
+	}
+	
 	f, err := excelize.OpenFile(templatePath)
 	if err != nil {
 		log.Printf("Warning: Template not found, creating basic file: %v", err)
@@ -600,6 +704,20 @@ func generateExcelFile(req TimecardRequest) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	
+	// Restore original styles.xml to preserve formatting
+	// excelize may rewrite styles.xml incorrectly, so we replace it with the original
+	if originalStylesXML != nil {
+		excelData := buffer.Bytes()
+		restoredData, err := restoreStylesXML(excelData, originalStylesXML)
+		if err != nil {
+			log.Printf("Warning: Could not restore styles.xml: %v (using excelize output)", err)
+			return excelData, nil
+		}
+		log.Printf("Restored original styles.xml to preserve formatting")
+		return restoredData, nil
+	}
+	
 	return buffer.Bytes(), nil
 }
 
