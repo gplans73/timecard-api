@@ -464,13 +464,22 @@ func generateExcelFile(req TimecardRequest) ([]byte, error) {
 	}
 	defer f.Close()
 
-	// Insert logo if provided
+	// Insert logo if provided - keep temp file alive until after WriteToBuffer
+	var tmpLogoFile string
 	if req.CompanyLogoBase64 != nil && *req.CompanyLogoBase64 != "" {
-		if err := insertLogoIntoExcel(f, *req.CompanyLogoBase64); err != nil {
+		var err error
+		tmpLogoFile, err = insertLogoIntoExcel(f, *req.CompanyLogoBase64)
+		if err != nil {
 			log.Printf("Warning: Could not insert logo into Excel: %v", err)
 			// Continue without logo
 		} else {
 			log.Printf("Logo inserted into Excel successfully")
+			// Clean up temp file after we're done writing
+			defer func() {
+				if tmpLogoFile != "" {
+					os.Remove(tmpLogoFile)
+				}
+			}()
 		}
 	}
 
@@ -571,27 +580,31 @@ func generateExcelFile(req TimecardRequest) ([]byte, error) {
 
 // insertLogoIntoExcel inserts a logo image into the Excel file
 // The logo is inserted at cell A1 (top-left corner) with appropriate sizing
-func insertLogoIntoExcel(f *excelize.File, logoBase64 string) error {
+// Returns the temp file path so it can be cleaned up after WriteToBuffer is called
+func insertLogoIntoExcel(f *excelize.File, logoBase64 string) (string, error) {
 	// Decode base64 logo
 	logoData, err := base64.StdEncoding.DecodeString(logoBase64)
 	if err != nil {
-		return fmt.Errorf("failed to decode base64 logo: %w", err)
+		return "", fmt.Errorf("failed to decode base64 logo: %w", err)
 	}
 
 	// Create a temporary file to store the logo image
 	tmpFile, err := os.CreateTemp("", "logo_*.png")
 	if err != nil {
-		return fmt.Errorf("failed to create temp file: %w", err)
+		return "", fmt.Errorf("failed to create temp file: %w", err)
 	}
 	tmpFileName := tmpFile.Name()
-	defer os.Remove(tmpFileName) // Clean up temp file
 
 	// Write logo data to temp file
 	if _, err := tmpFile.Write(logoData); err != nil {
 		tmpFile.Close()
-		return fmt.Errorf("failed to write logo to temp file: %w", err)
+		os.Remove(tmpFileName)
+		return "", fmt.Errorf("failed to write logo to temp file: %w", err)
 	}
-	tmpFile.Close()
+	if err := tmpFile.Close(); err != nil {
+		os.Remove(tmpFileName)
+		return "", fmt.Errorf("failed to close temp file: %w", err)
+	}
 
 	// Get all sheets and insert logo into each
 	sheets := f.GetSheetList()
@@ -611,7 +624,8 @@ func insertLogoIntoExcel(f *excelize.File, logoBase64 string) error {
 		log.Printf("Logo inserted into sheet %s", sheetName)
 	}
 
-	return nil
+	// Return the temp file name so caller can clean it up after WriteToBuffer
+	return tmpFileName, nil
 }
 
 func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, weekData WeekData, weekNum int, jobNameMap map[string]string) error {
