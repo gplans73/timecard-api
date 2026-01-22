@@ -77,7 +77,7 @@ func forceRecalcAndRemoveCalcChain(xlsx []byte) ([]byte, error) {
 			b = removeCalcChainRelationships(b)
 		case "[Content_Types].xml":
 			b = removeCalcChainContentType(b)
-		// All other files (including styles.xml, worksheets, etc.) are copied unchanged
+			// All other files (including styles.xml, worksheets, etc.) are copied unchanged
 		}
 
 		// Copy file header to preserve compression method and other metadata
@@ -361,11 +361,13 @@ func generateTimecardHandler(w http.ResponseWriter, r *http.Request) {
 			log.Printf("Post-processed Excel: removed calcChain, added fullCalcOnLoad")
 			// Verify styles.xml still exists after post-processing
 			if !hasStylesXML(excelData) {
-				log.Printf("ERROR: styles.xml was lost during post-processing! Skipping post-processing.")
+				log.Printf("ERROR: styles.xml was lost during post-processing! Re-generating without post-processing.")
 				// Re-generate without post-processing
 				excelData, err = generateExcelFile(req)
 				if err != nil {
-					return nil, err
+					log.Printf("Error re-generating Excel file: %v", err)
+					http.Error(w, fmt.Sprintf("Error generating timecard: %v", err), http.StatusInternalServerError)
+					return
 				}
 			}
 		}
@@ -593,12 +595,12 @@ func generateExcelFile(req TimecardRequest) ([]byte, error) {
 
 	// Write to buffer - temp file must exist during this call
 	buffer, err := f.WriteToBuffer()
-	
+
 	// Clean up temp file immediately after WriteToBuffer completes
 	if tmpLogoFile != "" {
 		os.Remove(tmpLogoFile)
 	}
-	
+
 	if err != nil {
 		return nil, err
 	}
@@ -658,7 +660,7 @@ func insertLogoIntoExcel(f *excelize.File, logoBase64 string) (string, error) {
 		insertedCount++
 		log.Printf("Logo inserted into sheet %s", sheetName)
 	}
-	
+
 	if insertedCount == 0 {
 		return tmpFileName, fmt.Errorf("logo insertion failed for all sheets")
 	}
@@ -1135,3 +1137,4 @@ func hasStylesXML(xlsx []byte) bool {
 	}
 	return false
 }
+
