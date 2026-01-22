@@ -1,20 +1,22 @@
 package main
 
 import (
+	"archive/zip"
 	"bytes"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/xuri/excelize/v2"
+	"io"
 	"log"
 	"net/http"
 	"net/smtp"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/xuri/excelize/v2"
 )
 
 // setCellPreserveStyle writes a value into a cell while preserving the cell's original style (borders, number formats, alignment, etc).
@@ -34,9 +36,115 @@ func setCellPreserveStyle(f *excelize.File, sheet, cell string, value any) error
 // removeCalcChain removes xl/calcChain.xml if present.
 // Note: In excelize v2.9.0+, calcChain is handled automatically.
 // This function is kept for compatibility but does nothing in newer versions.
-func removeCalcChain(f *excelize.File) {
-	// calcChain removal is handled automatically by excelize v2.9.0+
-	// No manual deletion needed
+// forceRecalcAndRemoveCalcChain post-processes an XLSX to:
+// 1) remove xl/calcChain.xml (and related references), and
+// 2) ensure Excel recalculates formulas when the file is opened.
+func forceRecalcAndRemoveCalcChain(xlsx []byte) ([]byte, error) {
+	zr, err := zip.NewReader(bytes.NewReader(xlsx), int64(len(xlsx)))
+	if err != nil {
+		return nil, fmt.Errorf("open xlsx zip: %w", err)
+	}
+
+	var out bytes.Buffer
+	zw := zip.NewWriter(&out)
+
+	for _, zf := range zr.File {
+		name := zf.Name
+
+		// Drop calcChain entirely (stale calcChain is the common cause of "formulas show but values don't update")
+		if name == "xl/calcChain.xml" {
+			continue
+		}
+
+		rc, err := zf.Open()
+		if err != nil {
+			_ = zw.Close()
+			return nil, fmt.Errorf("read %s: %w", name, err)
+		}
+		b, err := io.ReadAll(rc)
+		_ = rc.Close()
+		if err != nil {
+			_ = zw.Close()
+			return nil, fmt.Errorf("read %s: %w", name, err)
+		}
+
+		switch name {
+		case "xl/workbook.xml":
+			b = ensureCalcPrAutoFull(b)
+		case "xl/_rels/workbook.xml.rels":
+			b = removeCalcChainRelationships(b)
+		case "[Content_Types].xml":
+			b = removeCalcChainContentType(b)
+		}
+
+		hdr := zf.FileHeader // copy
+		w, err := zw.CreateHeader(&hdr)
+		if err != nil {
+			_ = zw.Close()
+			return nil, fmt.Errorf("write %s: %w", name, err)
+		}
+		if _, err := w.Write(b); err != nil {
+			_ = zw.Close()
+			return nil, fmt.Errorf("write %s: %w", name, err)
+		}
+	}
+
+	if err := zw.Close(); err != nil {
+		return nil, fmt.Errorf("finalize xlsx zip: %w", err)
+	}
+	return out.Bytes(), nil
+}
+
+func ensureCalcPrAutoFull(b []byte) []byte {
+	s := string(b)
+
+	// Match <calcPr .../> (or <calcPr ...> ... </calcPr>)
+	reCalcPr := regexp.MustCompile(`(?s)<calcPr[^>]*/?>`)
+	loc := reCalcPr.FindStringIndex(s)
+	if loc == nil {
+		// No calcPr -> insert a minimal one before </workbook>
+		insert := `<calcPr calcId="1" calcMode="auto" fullCalcOnLoad="1"/>`
+		if strings.Contains(s, "</workbook>") {
+			s = strings.Replace(s, "</workbook>", insert+"</workbook>", 1)
+			return []byte(s)
+		}
+		return b
+	}
+
+	elem := s[loc[0]:loc[1]]
+
+	// calcMode="auto"
+	if regexp.MustCompile(`calcMode="[^"]*"`).MatchString(elem) {
+		elem = regexp.MustCompile(`calcMode="[^"]*"`).ReplaceAllString(elem, `calcMode="auto"`)
+	} else {
+		elem = strings.Replace(elem, "<calcPr", `<calcPr calcMode="auto"`, 1)
+	}
+
+	// fullCalcOnLoad="1"
+	if !strings.Contains(elem, `fullCalcOnLoad="`) {
+		elem = strings.Replace(elem, "<calcPr", `<calcPr fullCalcOnLoad="1"`, 1)
+	} else {
+		elem = regexp.MustCompile(`fullCalcOnLoad="[^"]*"`).ReplaceAllString(elem, `fullCalcOnLoad="1"`)
+	}
+
+	// Replace the calcPr element in workbook.xml
+	s = s[:loc[0]] + elem + s[loc[1]:]
+	return []byte(s)
+}
+
+func removeCalcChainRelationships(b []byte) []byte {
+	s := string(b)
+	// Remove any relationship entries that reference calcChain (by Type or Target)
+	re := regexp.MustCompile(`(?s)<Relationship[^>]*(?:calcChain)[^>]*/>`)
+	s = re.ReplaceAllString(s, "")
+	return []byte(s)
+}
+
+func removeCalcChainContentType(b []byte) []byte {
+	s := string(b)
+	re := regexp.MustCompile(`(?s)<Override[^>]*PartName="/xl/calcChain\.xml"[^>]*/>`)
+	s = re.ReplaceAllString(s, "")
+	return []byte(s)
 }
 
 // =============================================================================
@@ -215,6 +323,15 @@ func generateTimecardHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Post-process: remove calcChain.xml and force Excel to recalculate on open
+	excelData, err = forceRecalcAndRemoveCalcChain(excelData)
+	if err != nil {
+		log.Printf("Warning: Could not post-process Excel file: %v", err)
+		// Continue anyway - the file should still be usable
+	} else {
+		log.Printf("Post-processed Excel: removed calcChain, added fullCalcOnLoad")
+	}
+
 	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"timecard_%s.xlsx\"", req.EmployeeName))
 	w.WriteHeader(http.StatusOK)
@@ -243,6 +360,15 @@ func emailTimecardHandler(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Error generating Excel: %v", err)
 		http.Error(w, fmt.Sprintf("Error generating timecard: %v", err), http.StatusInternalServerError)
 		return
+	}
+
+	// Post-process: remove calcChain.xml and force Excel to recalculate on open
+	excelData, err = forceRecalcAndRemoveCalcChain(excelData)
+	if err != nil {
+		log.Printf("Warning: Could not post-process Excel file for email: %v", err)
+		// Continue anyway
+	} else {
+		log.Printf("Post-processed Excel for email: removed calcChain, added fullCalcOnLoad")
 	}
 
 	err = sendEmail(req.To, req.CC, req.Subject, req.Body, excelData, req.EmployeeName)
@@ -372,8 +498,6 @@ func generateExcelFile(req TimecardRequest) ([]byte, error) {
 		ad3After, _ := f.GetCellValue(sheetName, "AD3")
 		log.Printf("MARKER AFTER fill: sheet=%s A3=%q AD3=%q", sheetName, a3After, ad3After)
 	}
-
-	removeCalcChain(f)
 	buffer, err := f.WriteToBuffer()
 	if err != nil {
 		return nil, err
@@ -686,8 +810,6 @@ func generateBasicExcelFile(req TimecardRequest) ([]byte, error) {
 		f.SetCellValue(sheet, fmt.Sprintf("C%d", row), "Total:")
 		f.SetCellValue(sheet, fmt.Sprintf("D%d", row), getOnCallPerCallAmount(req)*float64(onCallCount))
 	}
-
-	removeCalcChain(f)
 	buffer, err := f.WriteToBuffer()
 	if err != nil {
 		return nil, err
