@@ -478,9 +478,6 @@ func generateTimecardHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Post-process: remove calcChain.xml and force Excel to recalculate on open
-	// TEMPORARILY DISABLED to test if this is corrupting styles.xml
-	// If formatting works without this, we know the post-processing is the issue
-	/*
 	excelData, err = forceRecalcAndRemoveCalcChain(excelData)
 	if err != nil {
 		log.Printf("Warning: Could not post-process Excel file: %v", err)
@@ -488,8 +485,6 @@ func generateTimecardHandler(w http.ResponseWriter, r *http.Request) {
 	} else {
 		log.Printf("Post-processed Excel: removed calcChain, added fullCalcOnLoad")
 	}
-	*/
-	log.Printf("Post-processing DISABLED - testing if this preserves styles.xml")
 
 	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"timecard_%s.xlsx\"", req.EmployeeName))
@@ -522,8 +517,6 @@ func emailTimecardHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Post-process: remove calcChain.xml and force Excel to recalculate on open
-	// TEMPORARILY DISABLED to test if this is corrupting styles.xml
-	/*
 	excelData, err = forceRecalcAndRemoveCalcChain(excelData)
 	if err != nil {
 		log.Printf("Warning: Could not post-process Excel file for email: %v", err)
@@ -531,8 +524,6 @@ func emailTimecardHandler(w http.ResponseWriter, r *http.Request) {
 	} else {
 		log.Printf("Post-processed Excel for email: removed calcChain, added fullCalcOnLoad")
 	}
-	*/
-	log.Printf("Post-processing DISABLED for email - testing if this preserves styles.xml")
 
 	err = sendEmail(req.To, req.CC, req.Subject, req.Body, excelData, req.EmployeeName)
 	if err != nil {
