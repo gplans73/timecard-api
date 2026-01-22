@@ -69,7 +69,6 @@ func forceRecalcAndRemoveCalcChain(xlsx []byte) ([]byte, error) {
 			return nil, fmt.Errorf("read %s: %w", name, err)
 		}
 
-		// Only modify specific files, preserve all others (including styles.xml) exactly as-is
 		switch name {
 		case "xl/workbook.xml":
 			b = ensureCalcPrAutoFull(b)
@@ -77,11 +76,9 @@ func forceRecalcAndRemoveCalcChain(xlsx []byte) ([]byte, error) {
 			b = removeCalcChainRelationships(b)
 		case "[Content_Types].xml":
 			b = removeCalcChainContentType(b)
-			// All other files (including styles.xml, worksheets, etc.) are copied unchanged
 		}
 
-		// Copy file header to preserve compression method and other metadata
-		hdr := zf.FileHeader
+		hdr := zf.FileHeader // copy
 		w, err := zw.CreateHeader(&hdr)
 		if err != nil {
 			_ = zw.Close()
@@ -338,9 +335,6 @@ func generateTimecardHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Printf("On-Call Daily Amount: $%.2f, Per-Call Amount: $%.2f",
 		getOnCallDailyAmount(req), getOnCallPerCallAmount(req))
-	if req.CompanyLogoBase64 != nil {
-		log.Printf("Company logo provided: %d bytes (base64)", len(*req.CompanyLogoBase64))
-	}
 	log.Printf("===================")
 
 	excelData, err := generateExcelFile(req)
@@ -351,6 +345,9 @@ func generateTimecardHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Post-process: remove calcChain.xml and force Excel to recalculate on open
+	// TEMPORARILY DISABLED to test if this is corrupting styles.xml
+	// TODO: Re-enable once we confirm the root cause
+	/*
 	excelData, err = forceRecalcAndRemoveCalcChain(excelData)
 	if err != nil {
 		log.Printf("Warning: Could not post-process Excel file: %v", err)
@@ -358,6 +355,8 @@ func generateTimecardHandler(w http.ResponseWriter, r *http.Request) {
 	} else {
 		log.Printf("Post-processed Excel: removed calcChain, added fullCalcOnLoad")
 	}
+	*/
+	log.Printf("Post-processing temporarily disabled to preserve formatting")
 
 	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"timecard_%s.xlsx\"", req.EmployeeName))
@@ -390,6 +389,9 @@ func emailTimecardHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Post-process: remove calcChain.xml and force Excel to recalculate on open
+	// TEMPORARILY DISABLED to test if this is corrupting styles.xml
+	// TODO: Re-enable once we confirm the root cause
+	/*
 	excelData, err = forceRecalcAndRemoveCalcChain(excelData)
 	if err != nil {
 		log.Printf("Warning: Could not post-process Excel file for email: %v", err)
@@ -397,6 +399,8 @@ func emailTimecardHandler(w http.ResponseWriter, r *http.Request) {
 	} else {
 		log.Printf("Post-processed Excel for email: removed calcChain, added fullCalcOnLoad")
 	}
+	*/
+	log.Printf("Post-processing temporarily disabled for email to preserve formatting")
 
 	err = sendEmail(req.To, req.CC, req.Subject, req.Body, excelData, req.EmployeeName)
 	if err != nil {
@@ -466,12 +470,6 @@ func generateExcelFile(req TimecardRequest) ([]byte, error) {
 		return generateBasicExcelFile(req)
 	}
 	defer f.Close()
-
-	// NOTE: Logo insertion is temporarily disabled as it corrupts styles.xml
-	// The CompanyLogoBase64 field is accepted but not used to maintain API compatibility
-	if req.CompanyLogoBase64 != nil && *req.CompanyLogoBase64 != "" {
-		log.Printf("Logo provided but insertion disabled to preserve formatting")
-	}
 
 	// Build job name lookup map: jobNumber -> jobName
 	jobNameMap := make(map[string]string)
