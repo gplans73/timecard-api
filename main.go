@@ -98,39 +98,58 @@ func forceRecalcAndRemoveCalcChain(xlsx []byte) ([]byte, error) {
 func ensureCalcPrAutoFull(b []byte) []byte {
 	s := string(b)
 
-	// Match <calcPr .../> (or <calcPr ...> ... </calcPr>)
-	reCalcPr := regexp.MustCompile(`(?s)<calcPr[^>]*/?>`)
-	loc := reCalcPr.FindStringIndex(s)
-	if loc == nil {
-		// No calcPr -> insert a minimal one before </workbook>
-		insert := `<calcPr calcId="1" calcMode="auto" fullCalcOnLoad="1"/>`
-		if strings.Contains(s, "</workbook>") {
-			s = strings.Replace(s, "</workbook>", insert+"</workbook>", 1)
-			return []byte(s)
-		}
-		return b
+	// Match calcPr element - handles both:
+	// 1. Self-closing: <calcPr calcId="123"/>
+	// 2. Open/close pair: <calcPr calcId="123"></calcPr>
+	reSelfClosing := regexp.MustCompile(`<calcPr([^>]*)/\s*>`)
+	reOpenClose := regexp.MustCompile(`<calcPr([^>]*)>\s*</calcPr>`)
+
+	// Try self-closing first
+	if loc := reSelfClosing.FindStringIndex(s); loc != nil {
+		attrs := reSelfClosing.FindStringSubmatch(s)[1]
+		newCalcPr := buildCalcPrElement(attrs)
+		s = s[:loc[0]] + newCalcPr + s[loc[1]:]
+		return []byte(s)
 	}
 
-	elem := s[loc[0]:loc[1]]
-
-	// calcMode="auto"
-	if regexp.MustCompile(`calcMode="[^"]*"`).MatchString(elem) {
-		elem = regexp.MustCompile(`calcMode="[^"]*"`).ReplaceAllString(elem, `calcMode="auto"`)
-	} else {
-		elem = strings.Replace(elem, "<calcPr", `<calcPr calcMode="auto"`, 1)
+	// Try open/close pair
+	if loc := reOpenClose.FindStringIndex(s); loc != nil {
+		attrs := reOpenClose.FindStringSubmatch(s)[1]
+		newCalcPr := buildCalcPrElement(attrs)
+		s = s[:loc[0]] + newCalcPr + s[loc[1]:]
+		return []byte(s)
 	}
 
-	// fullCalcOnLoad="1"
-	if !strings.Contains(elem, `fullCalcOnLoad="`) {
-		elem = strings.Replace(elem, "<calcPr", `<calcPr fullCalcOnLoad="1"`, 1)
-	} else {
-		elem = regexp.MustCompile(`fullCalcOnLoad="[^"]*"`).ReplaceAllString(elem, `fullCalcOnLoad="1"`)
+	// No calcPr found -> insert a minimal one before </workbook>
+	insert := `<calcPr calcId="1" calcMode="auto" fullCalcOnLoad="1"/>`
+	if strings.Contains(s, "</workbook>") {
+		s = strings.Replace(s, "</workbook>", insert+"</workbook>", 1)
+		return []byte(s)
 	}
-
-	// Replace the calcPr element in workbook.xml
-	s = s[:loc[0]] + elem + s[loc[1]:]
-	return []byte(s)
+	return b
 }
+
+// buildCalcPrElement creates a calcPr element with the required attributes
+func buildCalcPrElement(existingAttrs string) string {
+	attrs := existingAttrs
+
+	// Ensure calcMode="auto"
+	if regexp.MustCompile(`calcMode="[^"]*"`).MatchString(attrs) {
+		attrs = regexp.MustCompile(`calcMode="[^"]*"`).ReplaceAllString(attrs, `calcMode="auto"`)
+	} else {
+		attrs = ` calcMode="auto"` + attrs
+	}
+
+	// Ensure fullCalcOnLoad="1"
+	if regexp.MustCompile(`fullCalcOnLoad="[^"]*"`).MatchString(attrs) {
+		attrs = regexp.MustCompile(`fullCalcOnLoad="[^"]*"`).ReplaceAllString(attrs, `fullCalcOnLoad="1"`)
+	} else {
+		attrs = ` fullCalcOnLoad="1"` + attrs
+	}
+
+	return `<calcPr` + attrs + `/>`
+}
+
 
 func removeCalcChainRelationships(b []byte) []byte {
 	s := string(b)
