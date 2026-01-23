@@ -344,6 +344,7 @@ type Entry struct {
 	Hours        float64 `json:"hours"`
 	Overtime     bool    `json:"overtime"`
 	IsNightShift bool    `json:"is_night_shift"`
+	IsDoubleTime bool    `json:"is_double_time"`
 }
 
 type WeekData struct {
@@ -806,13 +807,13 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 	labourCodeColumns := []string{"C", "E", "G", "I", "K", "M", "O", "Q", "S", "U", "W", "Y", "AA", "AC", "AE", "AG"}
 	jobNumberColumns := []string{"D", "F", "H", "J", "L", "N", "P", "R", "T", "V", "X", "Z", "AB", "AD", "AF", "AH"}
 
-	// Get unique column keys for regular and overtime entries
+	// Get unique column keys for regular and overtime/double-time entries
 	// Column key format: "jobNumber|labourCode|isNight"
 	regularCols := getUniqueColumnsForType(weekData.Entries, false)
-	overtimeCols := getUniqueColumnsForType(weekData.Entries, true)
+	allOTCols := getUniqueColumnsForOTAndDT(weekData.Entries)
 
 	log.Printf("Regular columns: %v", regularCols)
-	log.Printf("Overtime columns: %v", overtimeCols)
+	log.Printf("OT/DT columns: %v", allOTCols)
 
 	// Fill Regular headers (Row 4)
 	for i, colKey := range regularCols {
@@ -837,10 +838,10 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 			i, labourCodeToWrite, labourCodeColumns[i], jobNumber, jobNumberColumns[i])
 	}
 
-	// Fill Overtime headers (Row 15)
-	for i, colKey := range overtimeCols {
+	// Fill Overtime/Double-Time headers (Row 15) - using allOTCols
+	for i, colKey := range allOTCols {
 		if i >= len(labourCodeColumns) {
-			log.Printf("Warning: More overtime columns than available (%d), truncating", len(labourCodeColumns))
+			log.Printf("Warning: More overtime/DT columns than available (%d), truncating", len(labourCodeColumns))
 			break
 		}
 		jobNumber, labourCode, isNight := splitColumnKey(colKey)
@@ -855,7 +856,7 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 		// Write job number to column D, F, H, etc. (row 15)
 		_ = setCellPreserveStyle(f, sheetName, jobNumberColumns[i]+"15", jobNumber)
 
-		log.Printf("  OT header col %d: labourCode='%s' -> %s15, jobNumber='%s' -> %s15",
+		log.Printf("  OT/DT header col %d: labourCode='%s' -> %s15, jobNumber='%s' -> %s15",
 			i, labourCodeToWrite, labourCodeColumns[i], jobNumber, jobNumberColumns[i])
 	}
 
@@ -863,6 +864,11 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 	// Map: dateKey -> columnKey -> hours
 	regularTimeEntries := make(map[string]map[string]float64)
 	overtimeEntries := make(map[string]map[string]float64)
+	doubleTimeEntries := make(map[string]map[string]float64)
+
+	// Also track daily OT and DT totals for columns W and Y
+	dailyOTTotal := make(map[string]float64)  // dateKey -> total OT hours
+	dailyDTTotal := make(map[string]float64)  // dateKey -> total DT hours
 
 	for _, entry := range weekData.Entries {
 		entryDate, err := time.Parse(time.RFC3339, entry.Date)
@@ -874,19 +880,32 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 		dateKey := entryDate.Format("2006-01-02")
 		colKey := columnKey(entry)
 
-		log.Printf("  Processing entry: date=%s, jobNumber='%s', labourCode='%s', hours=%.2f, OT=%v, night=%v => key='%s'",
-			dateKey, entry.JobNumber, entry.LabourCode, entry.Hours, entry.Overtime, entry.IsNightShift, colKey)
+		// Check if this is double-time (either by flag or by labour code "DT")
+		isDoubleTime := entry.IsDoubleTime || strings.ToUpper(strings.TrimSpace(entry.LabourCode)) == "DT"
 
-		if entry.Overtime {
+		log.Printf("  Processing entry: date=%s, jobNumber='%s', labourCode='%s', hours=%.2f, OT=%v, DT=%v, night=%v => key='%s'",
+			dateKey, entry.JobNumber, entry.LabourCode, entry.Hours, entry.Overtime, isDoubleTime, entry.IsNightShift, colKey)
+
+		if isDoubleTime {
+			// Double-time entries
+			if doubleTimeEntries[dateKey] == nil {
+				doubleTimeEntries[dateKey] = make(map[string]float64)
+			}
+			doubleTimeEntries[dateKey][colKey] += entry.Hours
+			dailyDTTotal[dateKey] += entry.Hours
+		} else if entry.Overtime {
+			// Overtime entries (not double-time)
 			if overtimeEntries[dateKey] == nil {
 				overtimeEntries[dateKey] = make(map[string]float64)
 			}
 			overtimeEntries[dateKey][colKey] += entry.Hours
+			dailyOTTotal[dateKey] += entry.Hours
 		} else {
+			// Regular time entries
 			if regularTimeEntries[dateKey] == nil {
 				regularTimeEntries[dateKey] = make(map[string]float64)
 			}
-			regularTimeEntries[dateKey][colKey] += entry.Hours
+		regularTimeEntries[dateKey][colKey] += entry.Hours
 		}
 	}
 
@@ -920,9 +939,9 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 			}
 		}
 
-		// Fill overtime hours
+		// Fill overtime hours (using allOTCols instead of overtimeCols)
 		if otHours, exists := overtimeEntries[dateKey]; exists {
-			for i, colKey := range overtimeCols {
+			for i, colKey := range allOTCols {
 				if i >= len(jobNumberColumns) {
 					break
 				}
@@ -932,6 +951,34 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 					log.Printf("    OT: Wrote %.2f hours to %s (date=%s, key=%s)", hours, cellRef, dateKey, colKey)
 				}
 			}
+		}
+
+		// Fill double-time hours (using allOTCols)
+		if dtHours, exists := doubleTimeEntries[dateKey]; exists {
+			for i, colKey := range allOTCols {
+				if i >= len(jobNumberColumns) {
+					break
+				}
+				if hours, ok := dtHours[colKey]; ok && hours > 0 {
+					cellRef := fmt.Sprintf("%s%d", jobNumberColumns[i], overtimeRow)
+					_ = setCellPreserveStyle(f, sheetName, cellRef, hours)
+					log.Printf("    DT: Wrote %.2f hours to %s (date=%s, key=%s)", hours, cellRef, dateKey, colKey)
+				}
+			}
+		}
+
+		// Write daily OT total to column W (for Office Use Only formula =SUM(W16:X22))
+		if otTotal, exists := dailyOTTotal[dateKey]; exists && otTotal > 0 {
+			cellRef := fmt.Sprintf("W%d", overtimeRow)
+			_ = setCellPreserveStyle(f, sheetName, cellRef, otTotal)
+			log.Printf("    OT TOTAL: Wrote %.2f hours to %s (date=%s)", otTotal, cellRef, dateKey)
+		}
+
+		// Write daily DT total to column Y (for Office Use Only formula =SUM(Y16:Z22))
+		if dtTotal, exists := dailyDTTotal[dateKey]; exists && dtTotal > 0 {
+			cellRef := fmt.Sprintf("Y%d", overtimeRow)
+			_ = setCellPreserveStyle(f, sheetName, cellRef, dtTotal)
+			log.Printf("    DT TOTAL: Wrote %.2f hours to %s (date=%s)", dtTotal, cellRef, dateKey)
 		}
 	}
 
@@ -979,6 +1026,27 @@ func getUniqueColumnsForType(entries []Entry, isOvertime bool) []string {
 	for _, entry := range entries {
 		if entry.Overtime != isOvertime {
 			continue
+		}
+		k := columnKey(entry)
+		if !seen[k] {
+			seen[k] = true
+			result = append(result, k)
+		}
+	}
+	return result
+}
+
+// getUniqueColumnsForOTAndDT returns unique column keys for entries that are either
+// overtime (Overtime=true) or double-time (IsDoubleTime=true or LabourCode="DT")
+func getUniqueColumnsForOTAndDT(entries []Entry) []string {
+	seen := make(map[string]bool)
+	var result []string
+
+	for _, entry := range entries {
+		// Check if this is an OT or DT entry
+		isDoubleTime := entry.IsDoubleTime || strings.ToUpper(strings.TrimSpace(entry.LabourCode)) == "DT"
+		if !entry.Overtime && !isDoubleTime {
+			continue // Skip regular time entries
 		}
 		k := columnKey(entry)
 		if !seen[k] {
