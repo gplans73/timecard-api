@@ -315,6 +315,7 @@ type TimecardRequest struct {
 	Entries             []Entry      `json:"entries"`
 	Weeks               []WeekData   `json:"weeks,omitempty"`
 	LabourCodes         []LabourCode `json:"labour_codes,omitempty"`
+	TimecardNotes       string       `json:"timecard_notes,omitempty"`
 	OnCallDailyAmount   *float64     `json:"on_call_daily_amount,omitempty"`
 	OnCallPerCallAmount *float64     `json:"on_call_per_call_amount,omitempty"`
 	// CompanyLogoBase64 removed to match working version exactly - logo functionality disabled to preserve formatting
@@ -1000,6 +1001,26 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 		
 		_ = setCellPreserveStyle(f, sheetName, "AB16", labourCodesText.String())
 		log.Printf("  Labour Codes: Wrote %d codes to AB16 on %s", maxCodes, sheetName)
+	}
+
+	// Write Timecard Notes to A25-A30
+	if req.TimecardNotes != "" {
+		lines := strings.Split(req.TimecardNotes, "\n")
+		noteCells := []string{"A25", "A26", "A27", "A28", "A29", "A30"}
+		
+		// First cell is "Note:" header
+		_ = setCellPreserveStyle(f, sheetName, "A25", "Note:")
+		
+		// Write note lines to A26-A30
+		for i, line := range lines {
+			if i >= 5 { // Max 5 lines (A26-A30)
+				break
+			}
+			if strings.TrimSpace(line) != "" {
+				_ = setCellPreserveStyle(f, sheetName, noteCells[i+1], line)
+			}
+		}
+		log.Printf("  Timecard Notes: Wrote %d lines to A25-A30 on %s", min(len(lines), 5), sheetName)
 	}
 
 	log.Printf("=== Week %d completed ===", weekNum)
