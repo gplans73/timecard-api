@@ -985,7 +985,7 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 	// Write Labour Codes to AB16 (merged cell AB16:AH27)
 	if len(req.LabourCodes) > 0 {
 		var labourCodesText strings.Builder
-		labourCodesText.WriteString("JOB Labour Codes\n")
+		labourCodesText.WriteString("JOB Labour Codes")
 		
 		// Limit to 18 codes (19 lines total including header)
 		maxCodes := 18
@@ -995,11 +995,11 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 		
 		for i := 0; i < maxCodes; i++ {
 			lc := req.LabourCodes[i]
-			labourCodesText.WriteString(fmt.Sprintf("%s: %s\n", lc.Name, lc.Code))
+			labourCodesText.WriteString(fmt.Sprintf("\n%s: %s", lc.Name, lc.Code))
 		}
 		
 		_ = setCellPreserveStyle(f, sheetName, "AB16", labourCodesText.String())
-		log.Printf("  Labour Codes: Wrote %d codes to AB16", maxCodes)
+		log.Printf("  Labour Codes: Wrote %d codes to AB16 on %s", maxCodes, sheetName)
 	}
 
 	log.Printf("=== Week %d completed ===", weekNum)
