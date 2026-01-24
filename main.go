@@ -316,6 +316,7 @@ type TimecardRequest struct {
 	Weeks               []WeekData   `json:"weeks,omitempty"`
 	LabourCodes         []LabourCode `json:"labour_codes,omitempty"`
 	TimecardNotes       string       `json:"timecard_notes,omitempty"`
+	OnCallNotes         string       `json:"on_call_notes,omitempty"`
 	OnCallDailyAmount   *float64     `json:"on_call_daily_amount,omitempty"`
 	OnCallPerCallAmount *float64     `json:"on_call_per_call_amount,omitempty"`
 	// CompanyLogoBase64 removed to match working version exactly - logo functionality disabled to preserve formatting
@@ -1021,6 +1022,12 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 			}
 		}
 		log.Printf("  Timecard Notes: Wrote %d lines to A25-A30 on %s", min(len(lines), 5), sheetName)
+	}
+
+	// Write On Call Notes to AB28 (merged cell AB28:AL29)
+	if req.OnCallNotes != "" {
+		_ = setCellPreserveStyle(f, sheetName, "AB28", req.OnCallNotes)
+		log.Printf("  On Call Notes: Wrote to AB28 on %s", sheetName)
 	}
 
 	log.Printf("=== Week %d completed ===", weekNum)
