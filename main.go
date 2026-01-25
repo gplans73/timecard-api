@@ -318,9 +318,9 @@ type TimecardRequest struct {
 	TimecardNotes       string       `json:"timecard_notes,omitempty"`
 	OnCallNotes         string       `json:"on_call_notes,omitempty"`
 	WorkOrderNotes      string       `json:"work_order_notes,omitempty"`
+	CompanyLogoBase64   string       `json:"company_logo_base64,omitempty"`
 	OnCallDailyAmount   *float64     `json:"on_call_daily_amount,omitempty"`
 	OnCallPerCallAmount *float64     `json:"on_call_per_call_amount,omitempty"`
-	// CompanyLogoBase64 removed to match working version exactly - logo functionality disabled to preserve formatting
 }
 
 // Job represents a job/project with its number and display name
@@ -695,6 +695,23 @@ func generateExcelFile(req TimecardRequest) ([]byte, error) {
 		ad3After, _ := f.GetCellValue(sheetName, "AD3")
 		log.Printf("MARKER AFTER fill: sheet=%s A3=%q AD3=%q", sheetName, a3After, ad3After)
 	}
+	
+	// Insert company logo if provided
+	var logoTempFile string
+	if req.CompanyLogoBase64 != "" {
+		var err error
+		logoTempFile, err = insertLogoIntoExcel(f, req.CompanyLogoBase64)
+		if err != nil {
+			log.Printf("Warning: Could not insert logo: %v (continuing without logo)", err)
+		} else {
+			log.Printf("Company logo inserted successfully")
+		}
+		// Clean up temp file after we're done
+		if logoTempFile != "" {
+			defer os.Remove(logoTempFile)
+		}
+	}
+	
 	buffer, err := f.WriteToBuffer()
 	if err != nil {
 		return nil, err
