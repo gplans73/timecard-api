@@ -742,13 +742,40 @@ func insertLogoIntoExcel(f *excelize.File, logoBase64 string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to decode base64 logo: %w", err)
 	}
+	
+	log.Printf("Logo data received: %d bytes", len(logoData))
+	
+	// Detect image format from magic bytes
+	var ext string
+	if len(logoData) >= 8 {
+		// PNG magic: 89 50 4E 47 0D 0A 1A 0A
+		if logoData[0] == 0x89 && logoData[1] == 0x50 && logoData[2] == 0x4E && logoData[3] == 0x47 {
+			ext = ".png"
+			log.Printf("Detected PNG format")
+		// JPEG magic: FF D8 FF
+		} else if logoData[0] == 0xFF && logoData[1] == 0xD8 && logoData[2] == 0xFF {
+			ext = ".jpg"
+			log.Printf("Detected JPEG format")
+		// GIF magic: GIF87a or GIF89a
+		} else if logoData[0] == 0x47 && logoData[1] == 0x49 && logoData[2] == 0x46 {
+			ext = ".gif"
+			log.Printf("Detected GIF format")
+		} else {
+			log.Printf("Unknown format, first 8 bytes: % X", logoData[:8])
+			ext = ".png" // Default to PNG, excelize might still figure it out
+		}
+	} else {
+		log.Printf("Logo data too small (%d bytes), defaulting to PNG", len(logoData))
+		ext = ".png"
+	}
 
-	// Create a temporary file to store the logo image
-	tmpFile, err := os.CreateTemp("", "logo_*.png")
+	// Create a temporary file to store the logo image with correct extension
+	tmpFile, err := os.CreateTemp("", "logo_*"+ext)
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp file: %w", err)
 	}
 	tmpFileName := tmpFile.Name()
+	log.Printf("Created temp file: %s", tmpFileName)
 
 	// Write logo data to temp file
 	if _, err := tmpFile.Write(logoData); err != nil {
