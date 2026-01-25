@@ -7,6 +7,10 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"image"
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
 	"io"
 	"log"
 	"net/http"
@@ -751,7 +755,7 @@ func insertLogoIntoExcel(f *excelize.File, logoBase64 string) (string, error) {
 		// PNG magic: 89 50 4E 47 0D 0A 1A 0A
 		if logoData[0] == 0x89 && logoData[1] == 0x50 && logoData[2] == 0x4E && logoData[3] == 0x47 {
 			ext = ".png"
-			log.Printf("Detected PNG format")
+			log.Printf("Detected PNG format (magic bytes: %02X %02X %02X %02X)", logoData[0], logoData[1], logoData[2], logoData[3])
 		// JPEG magic: FF D8 FF
 		} else if logoData[0] == 0xFF && logoData[1] == 0xD8 && logoData[2] == 0xFF {
 			ext = ".jpg"
@@ -761,8 +765,9 @@ func insertLogoIntoExcel(f *excelize.File, logoBase64 string) (string, error) {
 			ext = ".gif"
 			log.Printf("Detected GIF format")
 		} else {
-			log.Printf("Unknown format, first 8 bytes: % X", logoData[:8])
-			ext = ".png" // Default to PNG, excelize might still figure it out
+			log.Printf("Unknown format, first 8 bytes: %02X %02X %02X %02X %02X %02X %02X %02X", 
+				logoData[0], logoData[1], logoData[2], logoData[3], logoData[4], logoData[5], logoData[6], logoData[7])
+			ext = ".png" // Default to PNG
 		}
 	} else {
 		log.Printf("Logo data too small (%d bytes), defaulting to PNG", len(logoData))
@@ -787,9 +792,30 @@ func insertLogoIntoExcel(f *excelize.File, logoBase64 string) (string, error) {
 		os.Remove(tmpFileName)
 		return "", fmt.Errorf("failed to close temp file: %w", err)
 	}
+	
+	// Verify the file was written correctly
+	fileInfo, err := os.Stat(tmpFileName)
+	if err != nil {
+		log.Printf("Warning: Could not stat temp file: %v", err)
+	} else {
+		log.Printf("Temp file size: %d bytes (expected: %d)", fileInfo.Size(), len(logoData))
+	}
+	
+	// Try to decode the image using Go's image package to validate it
+	imgFile, err := os.Open(tmpFileName)
+	if err != nil {
+		log.Printf("Warning: Could not open temp file for validation: %v", err)
+	} else {
+		defer imgFile.Close()
+		_, imgFormat, err := image.DecodeConfig(imgFile)
+		if err != nil {
+			log.Printf("Warning: Go image package could not decode image: %v", err)
+		} else {
+			log.Printf("Go image package detected format: %s", imgFormat)
+		}
+	}
 
 	// Get all sheets and insert logo into each
-	// Only add to sheets that actually have data to minimize risk of corruption
 	sheets := f.GetSheetList()
 	insertedCount := 0
 	for _, sheetName := range sheets {
