@@ -171,7 +171,13 @@ func extractStylesXMLFromTemplate(templatePath string) ([]byte, error) {
 }
 
 // restoreStylesXML replaces the styles.xml in the Excel file with the original from the template
+// If removeOriginalImage is true, it will also remove xl/media/image1.png (the template's embedded logo)
 func restoreStylesXML(excelData []byte, originalStylesXML []byte) ([]byte, error) {
+	return restoreStylesXMLWithOptions(excelData, originalStylesXML, false)
+}
+
+// restoreStylesXMLWithOptions is like restoreStylesXML but with option to remove original image
+func restoreStylesXMLWithOptions(excelData []byte, originalStylesXML []byte, removeOriginalImage bool) ([]byte, error) {
 	zr, err := zip.NewReader(bytes.NewReader(excelData), int64(len(excelData)))
 	if err != nil {
 		return nil, fmt.Errorf("open excel zip: %w", err)
@@ -181,6 +187,12 @@ func restoreStylesXML(excelData []byte, originalStylesXML []byte) ([]byte, error
 	zw := zip.NewWriter(&out)
 	
 	for _, zf := range zr.File {
+		// Skip the original template image if we're replacing it with a custom logo
+		if removeOriginalImage && zf.Name == "xl/media/image1.png" {
+			log.Printf("Removing original template image: %s", zf.Name)
+			continue
+		}
+		
 		if zf.Name == "xl/styles.xml" {
 			// Replace with original styles.xml
 			hdr := zf.FileHeader
@@ -702,6 +714,7 @@ func generateExcelFile(req TimecardRequest) ([]byte, error) {
 	
 	// Insert company logo if provided
 	var logoTempFile string
+	var customLogoInserted bool
 	if req.CompanyLogoBase64 != "" {
 		var err error
 		logoTempFile, err = insertLogoIntoExcel(f, req.CompanyLogoBase64)
@@ -709,6 +722,7 @@ func generateExcelFile(req TimecardRequest) ([]byte, error) {
 			log.Printf("Warning: Could not insert logo: %v (continuing without logo)", err)
 		} else {
 			log.Printf("Company logo inserted successfully")
+			customLogoInserted = true
 		}
 		// Clean up temp file after we're done
 		if logoTempFile != "" {
@@ -723,14 +737,19 @@ func generateExcelFile(req TimecardRequest) ([]byte, error) {
 	
 	// Restore original styles.xml to preserve formatting
 	// excelize may rewrite styles.xml incorrectly, so we replace it with the original
+	// Also remove original template image if we inserted a custom logo
 	if originalStylesXML != nil {
 		excelData := buffer.Bytes()
-		restoredData, err := restoreStylesXML(excelData, originalStylesXML)
+		restoredData, err := restoreStylesXMLWithOptions(excelData, originalStylesXML, customLogoInserted)
 		if err != nil {
 			log.Printf("Warning: Could not restore styles.xml: %v (using excelize output)", err)
 			return excelData, nil
 		}
-		log.Printf("Restored original styles.xml to preserve formatting")
+		if customLogoInserted {
+			log.Printf("Restored original styles.xml and removed original template image")
+		} else {
+			log.Printf("Restored original styles.xml to preserve formatting")
+		}
 		return restoredData, nil
 	}
 	
@@ -801,31 +820,59 @@ func insertLogoIntoExcel(f *excelize.File, logoBase64 string) (string, error) {
 		log.Printf("Temp file size: %d bytes (expected: %d)", fileInfo.Size(), len(logoData))
 	}
 	
-	// Try to decode the image using Go's image package to validate it
+	// Try to decode the image using Go's image package to validate it and get dimensions
+	var imgWidth, imgHeight int
 	imgFile, err := os.Open(tmpFileName)
 	if err != nil {
 		log.Printf("Warning: Could not open temp file for validation: %v", err)
 	} else {
-		defer imgFile.Close()
-		_, imgFormat, err := image.DecodeConfig(imgFile)
+		imgConfig, imgFormat, err := image.DecodeConfig(imgFile)
+		imgFile.Close()
 		if err != nil {
 			log.Printf("Warning: Go image package could not decode image: %v", err)
 		} else {
-			log.Printf("Go image package detected format: %s", imgFormat)
+			imgWidth = imgConfig.Width
+			imgHeight = imgConfig.Height
+			log.Printf("Go image package detected format: %s, dimensions: %dx%d", imgFormat, imgWidth, imgHeight)
 		}
 	}
+	
+	// Calculate scale to achieve target height of ~0.62 inches (60 pixels at 96 DPI)
+	// The original template logo is 528x138 displayed at about 60px height
+	targetHeightPx := 60.0
+	scaleY := targetHeightPx / float64(imgHeight)
+	scaleX := scaleY // Maintain aspect ratio
+	
+	// Clamp scale to reasonable bounds
+	if scaleX > 1.0 {
+		scaleX = 1.0
+		scaleY = 1.0
+	}
+	if scaleX < 0.05 {
+		scaleX = 0.05
+		scaleY = 0.05
+	}
+	
+	log.Printf("Logo scale calculated: %.3f (target height: %.0fpx, image height: %d)", scaleY, targetHeightPx, imgHeight)
 
 	// Get all sheets and insert logo into each
 	sheets := f.GetSheetList()
 	insertedCount := 0
 	for _, sheetName := range sheets {
-		// Insert logo at A1 with a reasonable size
-		// Scale to 50% of original size and position with small offset
-		err := f.AddPicture(sheetName, "A1", tmpFileName, &excelize.GraphicOptions{
-			ScaleX:  0.5, // Scale down to 50% of original size
-			ScaleY:  0.5,
-			OffsetX: 10, // Small offset in pixels
-			OffsetY: 10,
+		// First, delete any existing pictures from the sheet to avoid duplicates
+		pictures, err := f.GetPictures(sheetName, "A1")
+		if err == nil && len(pictures) > 0 {
+			log.Printf("Found %d existing picture(s) at A1 on sheet %s", len(pictures), sheetName)
+		}
+		
+		// Insert logo at A1 with calculated scale to achieve ~0.62" height
+		err = f.AddPicture(sheetName, "A1", tmpFileName, &excelize.GraphicOptions{
+			AutoFit: false,
+			OffsetX: 5,
+			OffsetY: 3,
+			ScaleX:  scaleX,
+			ScaleY:  scaleY,
+			Positioning: "oneCell", // Don't move or size with cells
 		})
 		if err != nil {
 			log.Printf("Warning: Could not add logo to sheet %s: %v", sheetName, err)
