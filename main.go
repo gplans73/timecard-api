@@ -183,6 +183,24 @@ func restoreStylesXMLWithOptions(excelData []byte, originalStylesXML []byte, rem
 		return nil, fmt.Errorf("open excel zip: %w", err)
 	}
 	
+	// Debug: Log all files in the ZIP to see if image is present
+	log.Printf("=== Files in Excel ZIP (before restore) ===")
+	hasImage := false
+	hasDrawing := false
+	for _, zf := range zr.File {
+		if strings.Contains(zf.Name, "media") || strings.Contains(zf.Name, "drawing") {
+			log.Printf("  Found: %s (%d bytes)", zf.Name, zf.UncompressedSize64)
+			if strings.Contains(zf.Name, "image") {
+				hasImage = true
+			}
+			if strings.Contains(zf.Name, "drawing") {
+				hasDrawing = true
+			}
+		}
+	}
+	log.Printf("  Has image: %v, Has drawing: %v", hasImage, hasDrawing)
+	log.Printf("==========================================")
+	
 	var out bytes.Buffer
 	zw := zip.NewWriter(&out)
 	
