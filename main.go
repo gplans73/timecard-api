@@ -1316,9 +1316,13 @@ func generateExpenseMileageExcelFile(req ExpenseMileageRequest) ([]byte, error) 
 		submittalDateText = time.Now().Format("2006-01-02")
 	}
 
-	monthLabel := strings.TrimSpace(req.Month)
+	// Mileage header "Month" should reflect submission date, not receipt/mileage date range.
+	monthLabel := submittalDateText
 	if monthLabel == "" {
-		monthLabel = time.Now().Format("January 2006")
+		monthLabel = normalizeDateText(req.Month)
+	}
+	if monthLabel == "" {
+		monthLabel = time.Now().Format("2006-01-02")
 	}
 
 	employeeName := strings.TrimSpace(req.EmployeeName)
