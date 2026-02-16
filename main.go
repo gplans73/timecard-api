@@ -8,11 +8,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"image"
-	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"net/smtp"
 	"os"
@@ -108,13 +108,13 @@ func forceRecalcAndRemoveCalcChain(xlsx []byte) ([]byte, error) {
 				_ = zw.Close()
 				return nil, fmt.Errorf("open raw %s: %w", name, err)
 			}
-			
+
 			// Get compressed size
 			compressedSize := int64(zf.CompressedSize64)
 			if compressedSize == 0 {
 				compressedSize = int64(zf.CompressedSize)
 			}
-			
+
 			// Create raw writer to preserve compression
 			hdr := zf.FileHeader
 			w, err := zw.CreateRaw(&hdr)
@@ -122,7 +122,7 @@ func forceRecalcAndRemoveCalcChain(xlsx []byte) ([]byte, error) {
 				_ = zw.Close()
 				return nil, fmt.Errorf("create raw %s: %w", name, err)
 			}
-			
+
 			// Copy raw compressed bytes
 			// Note: OpenRaw() returns io.Reader (not io.ReadCloser), so no Close() needed
 			if _, err := io.CopyN(w, rc, compressedSize); err != nil {
@@ -145,12 +145,12 @@ func extractStylesXMLFromTemplate(templatePath string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read template: %w", err)
 	}
-	
+
 	zr, err := zip.NewReader(bytes.NewReader(templateData), int64(len(templateData)))
 	if err != nil {
 		return nil, fmt.Errorf("open template zip: %w", err)
 	}
-	
+
 	for _, zf := range zr.File {
 		if zf.Name == "xl/styles.xml" {
 			rc, err := zf.Open()
@@ -158,7 +158,7 @@ func extractStylesXMLFromTemplate(templatePath string) ([]byte, error) {
 				return nil, fmt.Errorf("open styles.xml: %w", err)
 			}
 			defer rc.Close()
-			
+
 			data, err := io.ReadAll(rc)
 			if err != nil {
 				return nil, fmt.Errorf("read styles.xml: %w", err)
@@ -166,51 +166,21 @@ func extractStylesXMLFromTemplate(templatePath string) ([]byte, error) {
 			return data, nil
 		}
 	}
-	
+
 	return nil, fmt.Errorf("styles.xml not found in template")
 }
 
 // restoreStylesXML replaces the styles.xml in the Excel file with the original from the template
-// If removeOriginalImage is true, it will also remove xl/media/image1.png (the template's embedded logo)
 func restoreStylesXML(excelData []byte, originalStylesXML []byte) ([]byte, error) {
-	return restoreStylesXMLWithOptions(excelData, originalStylesXML, false)
-}
-
-// restoreStylesXMLWithOptions is like restoreStylesXML but with option to remove original image
-func restoreStylesXMLWithOptions(excelData []byte, originalStylesXML []byte, removeOriginalImage bool) ([]byte, error) {
 	zr, err := zip.NewReader(bytes.NewReader(excelData), int64(len(excelData)))
 	if err != nil {
 		return nil, fmt.Errorf("open excel zip: %w", err)
 	}
-	
-	// Debug: Log all files in the ZIP to see if image is present
-	log.Printf("=== Files in Excel ZIP (before restore) ===")
-	hasImage := false
-	hasDrawing := false
-	for _, zf := range zr.File {
-		if strings.Contains(zf.Name, "media") || strings.Contains(zf.Name, "drawing") {
-			log.Printf("  Found: %s (%d bytes)", zf.Name, zf.UncompressedSize64)
-			if strings.Contains(zf.Name, "image") {
-				hasImage = true
-			}
-			if strings.Contains(zf.Name, "drawing") {
-				hasDrawing = true
-			}
-		}
-	}
-	log.Printf("  Has image: %v, Has drawing: %v", hasImage, hasDrawing)
-	log.Printf("==========================================")
-	
+
 	var out bytes.Buffer
 	zw := zip.NewWriter(&out)
-	
+
 	for _, zf := range zr.File {
-		// Skip the original template image if we're replacing it with a custom logo
-		if removeOriginalImage && zf.Name == "xl/media/image1.png" {
-			log.Printf("Removing original template image: %s", zf.Name)
-			continue
-		}
-		
 		if zf.Name == "xl/styles.xml" {
 			// Replace with original styles.xml
 			hdr := zf.FileHeader
@@ -229,37 +199,37 @@ func restoreStylesXMLWithOptions(excelData []byte, originalStylesXML []byte, rem
 			if zf.Name == "xl/calcChain.xml" {
 				continue // Skip calcChain
 			}
-			
+
 			// Use raw copy for unmodified files to preserve exact compression
 			rc, err := zf.OpenRaw()
 			if err != nil {
 				_ = zw.Close()
 				return nil, fmt.Errorf("open raw %s: %w", zf.Name, err)
 			}
-			
+
 			compressedSize := int64(zf.CompressedSize64)
 			if compressedSize == 0 {
 				compressedSize = int64(zf.CompressedSize)
 			}
-			
+
 			hdr := zf.FileHeader
 			w, err := zw.CreateRaw(&hdr)
 			if err != nil {
 				_ = zw.Close()
 				return nil, fmt.Errorf("create raw %s: %w", zf.Name, err)
 			}
-			
+
 			if _, err := io.CopyN(w, rc, compressedSize); err != nil {
 				_ = zw.Close()
 				return nil, fmt.Errorf("copy raw %s: %w", zf.Name, err)
 			}
 		}
 	}
-	
+
 	if err := zw.Close(); err != nil {
 		return nil, fmt.Errorf("finalize zip: %w", err)
 	}
-	
+
 	return out.Bytes(), nil
 }
 
@@ -349,12 +319,9 @@ type TimecardRequest struct {
 	Entries             []Entry      `json:"entries"`
 	Weeks               []WeekData   `json:"weeks,omitempty"`
 	LabourCodes         []LabourCode `json:"labour_codes,omitempty"`
-	TimecardNotes       string       `json:"timecard_notes,omitempty"`
-	OnCallNotes         string       `json:"on_call_notes,omitempty"`
-	WorkOrderNotes      string       `json:"work_order_notes,omitempty"`
-	CompanyLogoBase64   string       `json:"company_logo_base64,omitempty"`
 	OnCallDailyAmount   *float64     `json:"on_call_daily_amount,omitempty"`
 	OnCallPerCallAmount *float64     `json:"on_call_per_call_amount,omitempty"`
+	// CompanyLogoBase64 removed to match working version exactly - logo functionality disabled to preserve formatting
 }
 
 // Job represents a job/project with its number and display name
@@ -381,7 +348,6 @@ type Entry struct {
 	Hours        float64 `json:"hours"`
 	Overtime     bool    `json:"overtime"`
 	IsNightShift bool    `json:"is_night_shift"`
-	IsDoubleTime bool    `json:"is_double_time"`
 }
 
 type WeekData struct {
@@ -400,6 +366,42 @@ type EmailTimecardRequest struct {
 	Body    string  `json:"body"`
 }
 
+type ExpenseMileageRequest struct {
+	EmployeeName      string            `json:"employee_name"`
+	SubmittalDate     string            `json:"submittal_date,omitempty"`
+	Month             string            `json:"month,omitempty"`
+	Expenses          []ExpenseLineItem `json:"expenses"`
+	Mileage           []MileageLineItem `json:"mileage"`
+	ExpenseCodes      []ExpenseCodeItem `json:"expense_codes,omitempty"`
+	CompanyLogoBase64 *string           `json:"company_logo_base64,omitempty"`
+}
+
+type ExpenseLineItem struct {
+	Date           string   `json:"date"`
+	JobNumber      string   `json:"job_number"`
+	MaterialCode   string   `json:"material_code"`
+	Company        string   `json:"company"`
+	Description    string   `json:"description"`
+	OfficeDisburse *float64 `json:"office_use_disburse,omitempty"`
+	BeforeTax      *float64 `json:"before_tax,omitempty"`
+	PST            *float64 `json:"pst,omitempty"`
+	GST            *float64 `json:"gst,omitempty"`
+	TotalAfterTax  *float64 `json:"total_after_tax,omitempty"`
+}
+
+type MileageLineItem struct {
+	Date          string  `json:"date"`
+	From          string  `json:"from"`
+	To            string  `json:"to"`
+	Distance      float64 `json:"distance"`
+	Reimbursement float64 `json:"reimbursement"`
+}
+
+type ExpenseCodeItem struct {
+	Name string `json:"name"`
+	Code string `json:"code"`
+}
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -413,6 +415,7 @@ func main() {
 	http.HandleFunc("/api/generate-timecard", corsMiddleware(generateTimecardHandler))
 	http.HandleFunc("/api/email-timecard", corsMiddleware(emailTimecardHandler))
 	http.HandleFunc("/api/generate-pdf-timecard", corsMiddleware(generatePDFTimecardHandler))
+	http.HandleFunc("/api/generate-expense-mileage", corsMiddleware(generateExpenseMileageHandler))
 
 	log.Printf("Server starting on port %s", port)
 	if err := http.ListenAndServe(":"+port, nil); err != nil {
@@ -532,6 +535,54 @@ func generateTimecardHandler(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Successfully generated timecard (%d bytes)", len(excelData))
 }
 
+func generateExpenseMileageHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req ExpenseMileageRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Printf("Error decoding expense/mileage request: %v", err)
+		http.Error(w, fmt.Sprintf("Invalid request: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	log.Printf(
+		"Generating expense/mileage workbook for %s (expenses=%d mileage=%d)",
+		req.EmployeeName,
+		len(req.Expenses),
+		len(req.Mileage),
+	)
+
+	workbookData, err := generateExpenseMileageExcelFile(req)
+	if err != nil {
+		log.Printf("Error generating expense/mileage workbook: %v", err)
+		http.Error(w, fmt.Sprintf("Error generating workbook: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	workbookData, err = forceRecalcAndRemoveCalcChain(workbookData)
+	if err != nil {
+		log.Printf("Warning: Could not post-process expense/mileage workbook: %v", err)
+	}
+
+	fileNameEmployee := strings.ReplaceAll(strings.TrimSpace(req.EmployeeName), " ", "_")
+	if fileNameEmployee == "" {
+		fileNameEmployee = "employee"
+	}
+
+	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	w.Header().Set(
+		"Content-Disposition",
+		fmt.Sprintf("attachment; filename=\"expense_mileage_%s_%s.xlsx\"", fileNameEmployee, time.Now().Format("2006-01-02")),
+	)
+	w.WriteHeader(http.StatusOK)
+	w.Write(workbookData)
+
+	log.Printf("Successfully generated expense/mileage workbook (%d bytes)", len(workbookData))
+}
+
 func emailTimecardHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -625,7 +676,7 @@ func getOnCallPerCallAmount(req TimecardRequest) float64 {
 
 func generateExcelFile(req TimecardRequest) ([]byte, error) {
 	templatePath := "template.xlsx"
-	
+
 	// Extract original styles.xml from template BEFORE excelize modifies it
 	// This preserves the exact formatting that works
 	originalStylesXML, err := extractStylesXMLFromTemplate(templatePath)
@@ -633,7 +684,7 @@ func generateExcelFile(req TimecardRequest) ([]byte, error) {
 		log.Printf("Warning: Could not extract styles.xml from template: %v (continuing anyway)", err)
 		originalStylesXML = nil
 	}
-	
+
 	f, err := excelize.OpenFile(templatePath)
 	if err != nil {
 		log.Printf("Warning: Template not found, creating basic file: %v", err)
@@ -729,48 +780,24 @@ func generateExcelFile(req TimecardRequest) ([]byte, error) {
 		ad3After, _ := f.GetCellValue(sheetName, "AD3")
 		log.Printf("MARKER AFTER fill: sheet=%s A3=%q AD3=%q", sheetName, a3After, ad3After)
 	}
-	
-	// Insert company logo if provided
-	var logoTempFile string
-	var customLogoInserted bool
-	if req.CompanyLogoBase64 != "" {
-		var err error
-		logoTempFile, err = insertLogoIntoExcel(f, req.CompanyLogoBase64)
-		if err != nil {
-			log.Printf("Warning: Could not insert logo: %v (continuing without logo)", err)
-		} else {
-			log.Printf("Company logo inserted successfully")
-			customLogoInserted = true
-		}
-		// Clean up temp file after we're done
-		if logoTempFile != "" {
-			defer os.Remove(logoTempFile)
-		}
-	}
-	
 	buffer, err := f.WriteToBuffer()
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Restore original styles.xml to preserve formatting
 	// excelize may rewrite styles.xml incorrectly, so we replace it with the original
-	// Also remove original template image if we inserted a custom logo
 	if originalStylesXML != nil {
 		excelData := buffer.Bytes()
-		restoredData, err := restoreStylesXMLWithOptions(excelData, originalStylesXML, customLogoInserted)
+		restoredData, err := restoreStylesXML(excelData, originalStylesXML)
 		if err != nil {
 			log.Printf("Warning: Could not restore styles.xml: %v (using excelize output)", err)
 			return excelData, nil
 		}
-		if customLogoInserted {
-			log.Printf("Restored original styles.xml and removed original template image")
-		} else {
-			log.Printf("Restored original styles.xml to preserve formatting")
-		}
+		log.Printf("Restored original styles.xml to preserve formatting")
 		return restoredData, nil
 	}
-	
+
 	return buffer.Bytes(), nil
 }
 
@@ -783,41 +810,13 @@ func insertLogoIntoExcel(f *excelize.File, logoBase64 string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to decode base64 logo: %w", err)
 	}
-	
-	log.Printf("Logo data received: %d bytes", len(logoData))
-	
-	// Detect image format from magic bytes
-	var ext string
-	if len(logoData) >= 8 {
-		// PNG magic: 89 50 4E 47 0D 0A 1A 0A
-		if logoData[0] == 0x89 && logoData[1] == 0x50 && logoData[2] == 0x4E && logoData[3] == 0x47 {
-			ext = ".png"
-			log.Printf("Detected PNG format (magic bytes: %02X %02X %02X %02X)", logoData[0], logoData[1], logoData[2], logoData[3])
-		// JPEG magic: FF D8 FF
-		} else if logoData[0] == 0xFF && logoData[1] == 0xD8 && logoData[2] == 0xFF {
-			ext = ".jpg"
-			log.Printf("Detected JPEG format")
-		// GIF magic: GIF87a or GIF89a
-		} else if logoData[0] == 0x47 && logoData[1] == 0x49 && logoData[2] == 0x46 {
-			ext = ".gif"
-			log.Printf("Detected GIF format")
-		} else {
-			log.Printf("Unknown format, first 8 bytes: %02X %02X %02X %02X %02X %02X %02X %02X", 
-				logoData[0], logoData[1], logoData[2], logoData[3], logoData[4], logoData[5], logoData[6], logoData[7])
-			ext = ".png" // Default to PNG
-		}
-	} else {
-		log.Printf("Logo data too small (%d bytes), defaulting to PNG", len(logoData))
-		ext = ".png"
-	}
 
-	// Create a temporary file to store the logo image with correct extension
-	tmpFile, err := os.CreateTemp("", "logo_*"+ext)
+	// Create a temporary file to store the logo image
+	tmpFile, err := os.CreateTemp("", "logo_*.png")
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp file: %w", err)
 	}
 	tmpFileName := tmpFile.Name()
-	log.Printf("Created temp file: %s", tmpFileName)
 
 	// Write logo data to temp file
 	if _, err := tmpFile.Write(logoData); err != nil {
@@ -829,68 +828,19 @@ func insertLogoIntoExcel(f *excelize.File, logoBase64 string) (string, error) {
 		os.Remove(tmpFileName)
 		return "", fmt.Errorf("failed to close temp file: %w", err)
 	}
-	
-	// Verify the file was written correctly
-	fileInfo, err := os.Stat(tmpFileName)
-	if err != nil {
-		log.Printf("Warning: Could not stat temp file: %v", err)
-	} else {
-		log.Printf("Temp file size: %d bytes (expected: %d)", fileInfo.Size(), len(logoData))
-	}
-	
-	// Try to decode the image using Go's image package to validate it and get dimensions
-	var imgWidth, imgHeight int
-	imgFile, err := os.Open(tmpFileName)
-	if err != nil {
-		log.Printf("Warning: Could not open temp file for validation: %v", err)
-	} else {
-		imgConfig, imgFormat, err := image.DecodeConfig(imgFile)
-		imgFile.Close()
-		if err != nil {
-			log.Printf("Warning: Go image package could not decode image: %v", err)
-		} else {
-			imgWidth = imgConfig.Width
-			imgHeight = imgConfig.Height
-			log.Printf("Go image package detected format: %s, dimensions: %dx%d", imgFormat, imgWidth, imgHeight)
-		}
-	}
-	
-	// Calculate scale to achieve target height of ~0.62 inches (60 pixels at 96 DPI)
-	// The original template logo is 528x138 displayed at about 60px height
-	targetHeightPx := 60.0
-	scaleY := targetHeightPx / float64(imgHeight)
-	scaleX := scaleY // Maintain aspect ratio
-	
-	// Clamp scale to reasonable bounds
-	if scaleX > 1.0 {
-		scaleX = 1.0
-		scaleY = 1.0
-	}
-	if scaleX < 0.05 {
-		scaleX = 0.05
-		scaleY = 0.05
-	}
-	
-	log.Printf("Logo scale calculated: %.3f (target height: %.0fpx, image height: %d)", scaleY, targetHeightPx, imgHeight)
 
 	// Get all sheets and insert logo into each
+	// Only add to sheets that actually have data to minimize risk of corruption
 	sheets := f.GetSheetList()
 	insertedCount := 0
 	for _, sheetName := range sheets {
-		// First, delete any existing pictures from the sheet to avoid duplicates
-		pictures, err := f.GetPictures(sheetName, "A1")
-		if err == nil && len(pictures) > 0 {
-			log.Printf("Found %d existing picture(s) at A1 on sheet %s", len(pictures), sheetName)
-		}
-		
-		// Insert logo at A1 with calculated scale to achieve ~0.62" height
-		err = f.AddPicture(sheetName, "A1", tmpFileName, &excelize.GraphicOptions{
-			AutoFit: false,
-			OffsetX: 5,
-			OffsetY: 3,
-			ScaleX:  scaleX,
-			ScaleY:  scaleY,
-			Positioning: "oneCell", // Don't move or size with cells
+		// Insert logo at A1 with a reasonable size
+		// Scale to 50% of original size and position with small offset
+		err := f.AddPicture(sheetName, "A1", tmpFileName, &excelize.GraphicOptions{
+			ScaleX:  0.5, // Scale down to 50% of original size
+			ScaleY:  0.5,
+			OffsetX: 10, // Small offset in pixels
+			OffsetY: 10,
 		})
 		if err != nil {
 			log.Printf("Warning: Could not add logo to sheet %s: %v", sheetName, err)
@@ -910,6 +860,55 @@ func insertLogoIntoExcel(f *excelize.File, logoBase64 string) (string, error) {
 
 	// Return the temp file name so caller can clean it up after WriteToBuffer
 	return tmpFileName, nil
+}
+
+// insertLogoIntoSheet inserts a base64 PNG/JPG logo at a specific sheet/cell.
+func insertLogoIntoSheet(
+	f *excelize.File,
+	logoBase64 string,
+	sheetName string,
+	cell string,
+	scaleX float64,
+	scaleY float64,
+	offsetX int,
+	offsetY int,
+) error {
+	logoData, err := base64.StdEncoding.DecodeString(logoBase64)
+	if err != nil {
+		return fmt.Errorf("failed to decode base64 logo: %w", err)
+	}
+
+	_, format, err := image.DecodeConfig(bytes.NewReader(logoData))
+	if err != nil {
+		return fmt.Errorf("failed to decode logo image: %w", err)
+	}
+
+	ext := ".png"
+	switch strings.ToLower(format) {
+	case "jpeg", "jpg":
+		ext = ".jpg"
+	case "png":
+		ext = ".png"
+	default:
+		return fmt.Errorf("unsupported logo format: %s", format)
+	}
+
+	err = f.AddPictureFromBytes(sheetName, cell, &excelize.Picture{
+		Extension: ext,
+		File:      logoData,
+		Format: &excelize.GraphicOptions{
+			ScaleX:          scaleX,
+			ScaleY:          scaleY,
+			OffsetX:         offsetX,
+			OffsetY:         offsetY,
+			LockAspectRatio: true,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to add picture to %s!%s: %w", sheetName, cell, err)
+	}
+
+	return nil
 }
 
 func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, weekData WeekData, weekNum int, jobNameMap map[string]string) error {
@@ -945,13 +944,13 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 	labourCodeColumns := []string{"C", "E", "G", "I", "K", "M", "O", "Q", "S", "U", "W", "Y", "AA", "AC", "AE", "AG"}
 	jobNumberColumns := []string{"D", "F", "H", "J", "L", "N", "P", "R", "T", "V", "X", "Z", "AB", "AD", "AF", "AH"}
 
-	// Get unique column keys for regular and overtime/double-time entries
+	// Get unique column keys for regular and overtime entries
 	// Column key format: "jobNumber|labourCode|isNight"
 	regularCols := getUniqueColumnsForType(weekData.Entries, false)
-	allOTCols := getUniqueColumnsForOTAndDT(weekData.Entries)
+	overtimeCols := getUniqueColumnsForType(weekData.Entries, true)
 
 	log.Printf("Regular columns: %v", regularCols)
-	log.Printf("OT/DT columns: %v", allOTCols)
+	log.Printf("Overtime columns: %v", overtimeCols)
 
 	// Fill Regular headers (Row 4)
 	for i, colKey := range regularCols {
@@ -976,10 +975,10 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 			i, labourCodeToWrite, labourCodeColumns[i], jobNumber, jobNumberColumns[i])
 	}
 
-	// Fill Overtime/Double-Time headers (Row 15) - using allOTCols
-	for i, colKey := range allOTCols {
+	// Fill Overtime headers (Row 15)
+	for i, colKey := range overtimeCols {
 		if i >= len(labourCodeColumns) {
-			log.Printf("Warning: More overtime/DT columns than available (%d), truncating", len(labourCodeColumns))
+			log.Printf("Warning: More overtime columns than available (%d), truncating", len(labourCodeColumns))
 			break
 		}
 		jobNumber, labourCode, isNight := splitColumnKey(colKey)
@@ -994,7 +993,7 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 		// Write job number to column D, F, H, etc. (row 15)
 		_ = setCellPreserveStyle(f, sheetName, jobNumberColumns[i]+"15", jobNumber)
 
-		log.Printf("  OT/DT header col %d: labourCode='%s' -> %s15, jobNumber='%s' -> %s15",
+		log.Printf("  OT header col %d: labourCode='%s' -> %s15, jobNumber='%s' -> %s15",
 			i, labourCodeToWrite, labourCodeColumns[i], jobNumber, jobNumberColumns[i])
 	}
 
@@ -1002,11 +1001,6 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 	// Map: dateKey -> columnKey -> hours
 	regularTimeEntries := make(map[string]map[string]float64)
 	overtimeEntries := make(map[string]map[string]float64)
-	doubleTimeEntries := make(map[string]map[string]float64)
-
-	// Also track daily OT and DT totals for columns W and Y
-	dailyOTTotal := make(map[string]float64)  // dateKey -> total OT hours
-	dailyDTTotal := make(map[string]float64)  // dateKey -> total DT hours
 
 	for _, entry := range weekData.Entries {
 		entryDate, err := time.Parse(time.RFC3339, entry.Date)
@@ -1018,32 +1012,19 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 		dateKey := entryDate.Format("2006-01-02")
 		colKey := columnKey(entry)
 
-		// Check if this is double-time (either by flag or by labour code "DT")
-		isDoubleTime := entry.IsDoubleTime || strings.ToUpper(strings.TrimSpace(entry.LabourCode)) == "DT"
+		log.Printf("  Processing entry: date=%s, jobNumber='%s', labourCode='%s', hours=%.2f, OT=%v, night=%v => key='%s'",
+			dateKey, entry.JobNumber, entry.LabourCode, entry.Hours, entry.Overtime, entry.IsNightShift, colKey)
 
-		log.Printf("  Processing entry: date=%s, jobNumber='%s', labourCode='%s', hours=%.2f, OT=%v, DT=%v, night=%v => key='%s'",
-			dateKey, entry.JobNumber, entry.LabourCode, entry.Hours, entry.Overtime, isDoubleTime, entry.IsNightShift, colKey)
-
-		if isDoubleTime {
-			// Double-time entries
-			if doubleTimeEntries[dateKey] == nil {
-				doubleTimeEntries[dateKey] = make(map[string]float64)
-			}
-			doubleTimeEntries[dateKey][colKey] += entry.Hours
-			dailyDTTotal[dateKey] += entry.Hours
-		} else if entry.Overtime {
-			// Overtime entries (not double-time)
+		if entry.Overtime {
 			if overtimeEntries[dateKey] == nil {
 				overtimeEntries[dateKey] = make(map[string]float64)
 			}
 			overtimeEntries[dateKey][colKey] += entry.Hours
-			dailyOTTotal[dateKey] += entry.Hours
 		} else {
-			// Regular time entries
 			if regularTimeEntries[dateKey] == nil {
 				regularTimeEntries[dateKey] = make(map[string]float64)
 			}
-		regularTimeEntries[dateKey][colKey] += entry.Hours
+			regularTimeEntries[dateKey][colKey] += entry.Hours
 		}
 	}
 
@@ -1077,9 +1058,9 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 			}
 		}
 
-		// Fill overtime hours (using allOTCols instead of overtimeCols)
+		// Fill overtime hours
 		if otHours, exists := overtimeEntries[dateKey]; exists {
-			for i, colKey := range allOTCols {
+			for i, colKey := range overtimeCols {
 				if i >= len(jobNumberColumns) {
 					break
 				}
@@ -1090,86 +1071,6 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 				}
 			}
 		}
-
-		// Fill double-time hours (using allOTCols)
-		if dtHours, exists := doubleTimeEntries[dateKey]; exists {
-			for i, colKey := range allOTCols {
-				if i >= len(jobNumberColumns) {
-					break
-				}
-				if hours, ok := dtHours[colKey]; ok && hours > 0 {
-					cellRef := fmt.Sprintf("%s%d", jobNumberColumns[i], overtimeRow)
-					_ = setCellPreserveStyle(f, sheetName, cellRef, hours)
-					log.Printf("    DT: Wrote %.2f hours to %s (date=%s, key=%s)", hours, cellRef, dateKey, colKey)
-				}
-			}
-		}
-
-		// Write daily OT total to column W (for Office Use Only formula =SUM(W16:X22))
-		if otTotal, exists := dailyOTTotal[dateKey]; exists && otTotal > 0 {
-			cellRef := fmt.Sprintf("W%d", overtimeRow)
-			_ = setCellPreserveStyle(f, sheetName, cellRef, otTotal)
-			log.Printf("    OT TOTAL: Wrote %.2f hours to %s (date=%s)", otTotal, cellRef, dateKey)
-		}
-
-		// Write daily DT total to column Y (for Office Use Only formula =SUM(Y16:Z22))
-		if dtTotal, exists := dailyDTTotal[dateKey]; exists && dtTotal > 0 {
-			cellRef := fmt.Sprintf("Y%d", overtimeRow)
-			_ = setCellPreserveStyle(f, sheetName, cellRef, dtTotal)
-			log.Printf("    DT TOTAL: Wrote %.2f hours to %s (date=%s)", dtTotal, cellRef, dateKey)
-		}
-	}
-
-	// Write Labour Codes to AB16 (merged cell AB16:AH27)
-	if len(req.LabourCodes) > 0 {
-		var labourCodesText strings.Builder
-		labourCodesText.WriteString("JOB Labour Codes")
-		
-		// Limit to 18 codes (19 lines total including header)
-		maxCodes := 18
-		if len(req.LabourCodes) < maxCodes {
-			maxCodes = len(req.LabourCodes)
-		}
-		
-		for i := 0; i < maxCodes; i++ {
-			lc := req.LabourCodes[i]
-			labourCodesText.WriteString(fmt.Sprintf("\n%s: %s", lc.Name, lc.Code))
-		}
-		
-		_ = setCellPreserveStyle(f, sheetName, "AB16", labourCodesText.String())
-		log.Printf("  Labour Codes: Wrote %d codes to AB16 on %s", maxCodes, sheetName)
-	}
-
-	// Write Timecard Notes to A25-A30
-	if req.TimecardNotes != "" {
-		lines := strings.Split(req.TimecardNotes, "\n")
-		noteCells := []string{"A25", "A26", "A27", "A28", "A29", "A30"}
-		
-		// First cell is "Note:" header
-		_ = setCellPreserveStyle(f, sheetName, "A25", "Note:")
-		
-		// Write note lines to A26-A30
-		for i, line := range lines {
-			if i >= 5 { // Max 5 lines (A26-A30)
-				break
-			}
-			if strings.TrimSpace(line) != "" {
-				_ = setCellPreserveStyle(f, sheetName, noteCells[i+1], line)
-			}
-		}
-		log.Printf("  Timecard Notes: Wrote %d lines to A25-A30 on %s", min(len(lines), 5), sheetName)
-	}
-
-	// Write On Call Notes to AB28 (merged cell AB28:AL29)
-	if req.OnCallNotes != "" {
-		_ = setCellPreserveStyle(f, sheetName, "AB28", req.OnCallNotes)
-		log.Printf("  On Call Notes: Wrote to AB28 on %s", sheetName)
-	}
-
-	// Write Work Order Notes to AB15 (merged cell AB15:AL15)
-	if req.WorkOrderNotes != "" {
-		_ = setCellPreserveStyle(f, sheetName, "AB15", req.WorkOrderNotes)
-		log.Printf("  Work Order Notes: Wrote to AB15 on %s", sheetName)
 	}
 
 	log.Printf("=== Week %d completed ===", weekNum)
@@ -1216,27 +1117,6 @@ func getUniqueColumnsForType(entries []Entry, isOvertime bool) []string {
 	for _, entry := range entries {
 		if entry.Overtime != isOvertime {
 			continue
-		}
-		k := columnKey(entry)
-		if !seen[k] {
-			seen[k] = true
-			result = append(result, k)
-		}
-	}
-	return result
-}
-
-// getUniqueColumnsForOTAndDT returns unique column keys for entries that are either
-// overtime (Overtime=true) or double-time (IsDoubleTime=true or LabourCode="DT")
-func getUniqueColumnsForOTAndDT(entries []Entry) []string {
-	seen := make(map[string]bool)
-	var result []string
-
-	for _, entry := range entries {
-		// Check if this is an OT or DT entry
-		isDoubleTime := entry.IsDoubleTime || strings.ToUpper(strings.TrimSpace(entry.LabourCode)) == "DT"
-		if !entry.Overtime && !isDoubleTime {
-			continue // Skip regular time entries
 		}
 		k := columnKey(entry)
 		if !seen[k] {
@@ -1341,6 +1221,209 @@ func generateBasicExcelFile(req TimecardRequest) ([]byte, error) {
 		return nil, err
 	}
 	return buffer.Bytes(), nil
+}
+
+func generateExpenseMileageExcelFile(req ExpenseMileageRequest) ([]byte, error) {
+	templatePath := "expense_mileage_template.xlsx"
+
+	originalStylesXML, err := extractStylesXMLFromTemplate(templatePath)
+	if err != nil {
+		log.Printf("Warning: Could not extract styles.xml from expense template: %v (continuing anyway)", err)
+		originalStylesXML = nil
+	}
+
+	f, err := excelize.OpenFile(templatePath)
+	if err != nil {
+		return nil, fmt.Errorf("open expense template: %w", err)
+	}
+	defer f.Close()
+
+	expenseSheet := "Expense"
+	mileageSheet := "Mileage"
+	expenseSheetIndex, err := f.GetSheetIndex(expenseSheet)
+	if err != nil || expenseSheetIndex == -1 {
+		return nil, fmt.Errorf("template is missing '%s' sheet", expenseSheet)
+	}
+	mileageSheetIndex, err := f.GetSheetIndex(mileageSheet)
+	if err != nil || mileageSheetIndex == -1 {
+		return nil, fmt.Errorf("template is missing '%s' sheet", mileageSheet)
+	}
+
+	submittalDateText := normalizeDateText(req.SubmittalDate)
+	if submittalDateText == "" {
+		submittalDateText = time.Now().Format("2006-01-02")
+	}
+
+	monthLabel := strings.TrimSpace(req.Month)
+	if monthLabel == "" {
+		monthLabel = time.Now().Format("January 2006")
+	}
+
+	employeeName := strings.TrimSpace(req.EmployeeName)
+	if employeeName == "" {
+		employeeName = "YOUR NAME"
+	}
+
+	if req.CompanyLogoBase64 != nil {
+		logoBase64 := strings.TrimSpace(*req.CompanyLogoBase64)
+		if logoBase64 != "" {
+			logoErr := insertLogoIntoSheet(
+				f,
+				logoBase64,
+				expenseSheet,
+				"H1",
+				0.45,
+				0.45,
+				6,
+				6,
+			)
+			if logoErr != nil {
+				log.Printf("Warning: Could not insert expense logo: %v", logoErr)
+			}
+		}
+	}
+
+	// Header values
+	_ = setCellPreserveStyle(f, expenseSheet, "C8", submittalDateText)
+	_ = setCellPreserveStyle(f, expenseSheet, "H8", employeeName)
+	_ = setCellPreserveStyle(f, mileageSheet, "E1", monthLabel)
+
+	// Update Phase Code block from latest Settings list
+	expenseCodeLines := make([]string, 0, len(req.ExpenseCodes))
+	for _, item := range req.ExpenseCodes {
+		code := strings.TrimSpace(item.Code)
+		if code == "" {
+			continue
+		}
+		name := strings.TrimSpace(item.Name)
+		if name == "" {
+			expenseCodeLines = append(expenseCodeLines, code)
+			continue
+		}
+		expenseCodeLines = append(expenseCodeLines, fmt.Sprintf("%s - %s", name, code))
+	}
+	if len(expenseCodeLines) > 0 {
+		_ = setCellPreserveStyle(f, expenseSheet, "A45", strings.Join(expenseCodeLines, "\n"))
+	}
+
+	// Expense data rows
+	const expenseStartRow = 11
+	const expenseEndRow = 41
+
+	for row := expenseStartRow; row <= expenseEndRow; row++ {
+		for _, col := range []string{"A", "B", "C", "D", "E", "F", "G", "H", "I", "J"} {
+			cell := fmt.Sprintf("%s%d", col, row)
+			_ = setCellPreserveStyle(f, expenseSheet, cell, "")
+		}
+	}
+
+	for idx, item := range req.Expenses {
+		row := expenseStartRow + idx
+		if row > expenseEndRow {
+			break
+		}
+
+		_ = setCellPreserveStyle(f, expenseSheet, fmt.Sprintf("A%d", row), normalizeDateText(item.Date))
+		_ = setCellPreserveStyle(f, expenseSheet, fmt.Sprintf("B%d", row), strings.TrimSpace(item.JobNumber))
+		_ = setCellPreserveStyle(f, expenseSheet, fmt.Sprintf("C%d", row), strings.TrimSpace(item.MaterialCode))
+		_ = setCellPreserveStyle(f, expenseSheet, fmt.Sprintf("D%d", row), strings.TrimSpace(item.Company))
+		_ = setCellPreserveStyle(f, expenseSheet, fmt.Sprintf("E%d", row), strings.TrimSpace(item.Description))
+
+		setOptionalNumericCell(f, expenseSheet, fmt.Sprintf("F%d", row), item.OfficeDisburse)
+		setOptionalNumericCell(f, expenseSheet, fmt.Sprintf("G%d", row), item.BeforeTax)
+		setOptionalNumericCell(f, expenseSheet, fmt.Sprintf("H%d", row), item.PST)
+		setOptionalNumericCell(f, expenseSheet, fmt.Sprintf("I%d", row), item.GST)
+		setOptionalNumericCell(f, expenseSheet, fmt.Sprintf("J%d", row), item.TotalAfterTax)
+	}
+
+	// Mileage data rows
+	const mileageStartRow = 8
+	const mileageEndRow = 47
+	for row := mileageStartRow; row <= mileageEndRow; row++ {
+		for _, col := range []string{"A", "B", "C", "D", "E"} {
+			cell := fmt.Sprintf("%s%d", col, row)
+			_ = setCellPreserveStyle(f, mileageSheet, cell, "")
+		}
+	}
+
+	for idx, item := range req.Mileage {
+		row := mileageStartRow + idx
+		if row > mileageEndRow {
+			break
+		}
+
+		_ = setCellPreserveStyle(f, mileageSheet, fmt.Sprintf("A%d", row), normalizeDateText(item.Date))
+		_ = setCellPreserveStyle(f, mileageSheet, fmt.Sprintf("B%d", row), strings.TrimSpace(item.From))
+		_ = setCellPreserveStyle(f, mileageSheet, fmt.Sprintf("C%d", row), strings.TrimSpace(item.To))
+		_ = setCellPreserveStyle(f, mileageSheet, fmt.Sprintf("D%d", row), roundTo(item.Distance, 2))
+		_ = setCellPreserveStyle(f, mileageSheet, fmt.Sprintf("E%d", row), roundTo(item.Reimbursement, 2))
+	}
+
+	buffer, err := f.WriteToBuffer()
+	if err != nil {
+		return nil, fmt.Errorf("write expense/mileage workbook: %w", err)
+	}
+
+	if originalStylesXML != nil {
+		restoredData, restoreErr := restoreStylesXML(buffer.Bytes(), originalStylesXML)
+		if restoreErr != nil {
+			log.Printf("Warning: Could not restore styles.xml for expense template: %v", restoreErr)
+			return buffer.Bytes(), nil
+		}
+		return restoredData, nil
+	}
+
+	return buffer.Bytes(), nil
+}
+
+func setOptionalNumericCell(f *excelize.File, sheet, cell string, value *float64) {
+	if value == nil {
+		_ = setCellPreserveStyle(f, sheet, cell, "")
+		return
+	}
+	_ = setCellPreserveStyle(f, sheet, cell, roundTo(*value, 2))
+}
+
+func normalizeDateText(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ""
+	}
+	parsed := parseFlexibleDate(trimmed)
+	if parsed.IsZero() {
+		return trimmed
+	}
+	return parsed.Format("2006-01-02")
+}
+
+func parseFlexibleDate(value string) time.Time {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return time.Time{}
+	}
+
+	layouts := []string{
+		time.RFC3339,
+		"2006-01-02",
+		"2006/01/02",
+		"Jan 2, 2006",
+		"January 2, 2006",
+	}
+
+	for _, layout := range layouts {
+		if parsed, err := time.Parse(layout, trimmed); err == nil {
+			return parsed
+		}
+	}
+	return time.Time{}
+}
+
+func roundTo(value float64, decimals int) float64 {
+	factor := 1.0
+	for i := 0; i < decimals; i++ {
+		factor *= 10
+	}
+	return math.Round(value*factor) / factor
 }
 
 // generatePDFFile generates a PDF version of the timecard
