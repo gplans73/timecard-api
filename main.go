@@ -374,6 +374,7 @@ type ExpenseMileageRequest struct {
 	Mileage           []MileageLineItem `json:"mileage"`
 	ExpenseCodes      []ExpenseCodeItem `json:"expense_codes,omitempty"`
 	CompanyLogoBase64 *string           `json:"company_logo_base64,omitempty"`
+	SubmissionEmail   *string           `json:"submission_email,omitempty"`
 }
 
 type ExpenseLineItem struct {
@@ -1367,6 +1368,7 @@ func generateExpenseMileageExcelFile(req ExpenseMileageRequest) ([]byte, error) 
 	if len(expenseCodeLines) > 0 {
 		_ = setCellPreserveStyle(f, expenseSheet, "A45", strings.Join(expenseCodeLines, "\n"))
 	}
+	applyExpenseSubmissionEmail(f, expenseSheet, req.SubmissionEmail)
 
 	// Expense data rows
 	const expenseStartRow = 11
@@ -1414,7 +1416,7 @@ func generateExpenseMileageExcelFile(req ExpenseMileageRequest) ([]byte, error) 
 			break
 		}
 
-		_ = setCellPreserveStyle(f, mileageSheet, fmt.Sprintf("A%d", row), normalizeDateText(item.Date))
+		_ = setCellPreserveStyle(f, mileageSheet, fmt.Sprintf("A%d", row), normalizeDateTextWithLayout(item.Date, "02-01-06"))
 		_ = setCellPreserveStyle(f, mileageSheet, fmt.Sprintf("B%d", row), strings.TrimSpace(item.From))
 		_ = setCellPreserveStyle(f, mileageSheet, fmt.Sprintf("C%d", row), strings.TrimSpace(item.To))
 		_ = setCellPreserveStyle(f, mileageSheet, fmt.Sprintf("D%d", row), roundTo(item.Distance, 2))
@@ -1446,7 +1448,42 @@ func setOptionalNumericCell(f *excelize.File, sheet, cell string, value *float64
 	_ = setCellPreserveStyle(f, sheet, cell, roundTo(*value, 2))
 }
 
+func applyExpenseSubmissionEmail(f *excelize.File, sheet string, submissionEmail *string) {
+	if submissionEmail == nil {
+		return
+	}
+
+	email := strings.TrimSpace(*submissionEmail)
+	if email == "" {
+		return
+	}
+
+	const instructionCell = "D45"
+	instructions, err := f.GetCellValue(sheet, instructionCell)
+	if err != nil || strings.TrimSpace(instructions) == "" {
+		return
+	}
+
+	submissionLineRegex := regexp.MustCompile(`(?m)(6\.\s*Submission:\s*Email\s+the\s+form\s+to\s*)([^.\n]+?)(\.\s*)$`)
+	if submissionLineRegex.MatchString(instructions) {
+		updated := submissionLineRegex.ReplaceAllString(instructions, "${1}"+email+".")
+		_ = setCellPreserveStyle(f, sheet, instructionCell, updated)
+		return
+	}
+
+	// Fallback: replace first email-like value if submission line format changes.
+	emailRegex := regexp.MustCompile(`(?i)[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}`)
+	if emailRegex.MatchString(instructions) {
+		updated := emailRegex.ReplaceAllString(instructions, email)
+		_ = setCellPreserveStyle(f, sheet, instructionCell, updated)
+	}
+}
+
 func normalizeDateText(value string) string {
+	return normalizeDateTextWithLayout(value, "2006-01-02")
+}
+
+func normalizeDateTextWithLayout(value, layout string) string {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
 		return ""
@@ -1455,7 +1492,7 @@ func normalizeDateText(value string) string {
 	if parsed.IsZero() {
 		return trimmed
 	}
-	return parsed.Format("2006-01-02")
+	return parsed.Format(layout)
 }
 
 func parseFlexibleDate(value string) time.Time {
