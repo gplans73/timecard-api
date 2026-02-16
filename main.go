@@ -1353,6 +1353,9 @@ func generateExpenseMileageExcelFile(req ExpenseMileageRequest) ([]byte, error) 
 	// Header values
 	setDateCellWithFallback(f, expenseSheet, "C6", submittalDateText)
 	_ = setCellPreserveStyle(f, expenseSheet, "H6", employeeName)
+	// The mileage template's B1 cell contains a formula link by default.
+	// Overwrite it with plain text to prevent Excel warning markers.
+	_ = setCellPreserveStyle(f, mileageSheet, "B1", employeeName)
 	ensureExpenseHeaderRow(f, expenseSheet)
 	_ = setCellPreserveStyle(f, mileageSheet, "E1", monthLabel)
 
@@ -1386,23 +1389,37 @@ func generateExpenseMileageExcelFile(req ExpenseMileageRequest) ([]byte, error) 
 		}
 	}
 
-	for idx, item := range req.Expenses {
-		row := expenseStartRow + idx
-		if row > expenseEndRow {
-			break
+	groupedExpenses := groupExpenseItemsByDescription(req.Expenses)
+	row := expenseStartRow
+
+expenseWriteLoop:
+	for groupIdx, group := range groupedExpenses {
+		for _, item := range group {
+			if row > expenseEndRow {
+				break expenseWriteLoop
+			}
+
+			setDateCellWithFallback(f, expenseSheet, fmt.Sprintf("A%d", row), item.Date)
+			setStringOrNumericCell(f, expenseSheet, fmt.Sprintf("B%d", row), item.JobNumber)
+			setStringOrNumericCell(f, expenseSheet, fmt.Sprintf("C%d", row), item.MaterialCode)
+			_ = setCellPreserveStyle(f, expenseSheet, fmt.Sprintf("D%d", row), strings.TrimSpace(item.Company))
+			_ = setCellPreserveStyle(f, expenseSheet, fmt.Sprintf("E%d", row), normalizeExpenseDescription(item.Description))
+
+			setOptionalNumericCell(f, expenseSheet, fmt.Sprintf("F%d", row), item.OfficeDisburse)
+			setOptionalNumericCell(f, expenseSheet, fmt.Sprintf("G%d", row), item.BeforeTax)
+			setOptionalNumericCell(f, expenseSheet, fmt.Sprintf("H%d", row), item.PST)
+			setOptionalNumericCell(f, expenseSheet, fmt.Sprintf("I%d", row), item.GST)
+			setOptionalNumericCell(f, expenseSheet, fmt.Sprintf("J%d", row), item.TotalAfterTax)
+			row++
 		}
 
-		setDateCellWithFallback(f, expenseSheet, fmt.Sprintf("A%d", row), item.Date)
-		setStringOrNumericCell(f, expenseSheet, fmt.Sprintf("B%d", row), item.JobNumber)
-		setStringOrNumericCell(f, expenseSheet, fmt.Sprintf("C%d", row), item.MaterialCode)
-		_ = setCellPreserveStyle(f, expenseSheet, fmt.Sprintf("D%d", row), strings.TrimSpace(item.Company))
-		_ = setCellPreserveStyle(f, expenseSheet, fmt.Sprintf("E%d", row), strings.TrimSpace(item.Description))
-
-		setOptionalNumericCell(f, expenseSheet, fmt.Sprintf("F%d", row), item.OfficeDisburse)
-		setOptionalNumericCell(f, expenseSheet, fmt.Sprintf("G%d", row), item.BeforeTax)
-		setOptionalNumericCell(f, expenseSheet, fmt.Sprintf("H%d", row), item.PST)
-		setOptionalNumericCell(f, expenseSheet, fmt.Sprintf("I%d", row), item.GST)
-		setOptionalNumericCell(f, expenseSheet, fmt.Sprintf("J%d", row), item.TotalAfterTax)
+		// Add a visual spacer row between description sections.
+		if groupIdx < len(groupedExpenses)-1 {
+			if row > expenseEndRow {
+				break
+			}
+			row++
+		}
 	}
 
 	// Mileage data rows
@@ -1531,6 +1548,39 @@ func applyExpenseSubmissionEmail(f *excelize.File, sheet string, submissionEmail
 		updated := emailRegex.ReplaceAllString(instructions, email)
 		_ = setCellPreserveStyle(f, sheet, instructionCell, updated)
 	}
+}
+
+func groupExpenseItemsByDescription(items []ExpenseLineItem) [][]ExpenseLineItem {
+	if len(items) == 0 {
+		return nil
+	}
+
+	grouped := make([][]ExpenseLineItem, 0)
+	groupIndexByDescription := make(map[string]int)
+
+	for _, item := range items {
+		description := normalizeExpenseDescription(item.Description)
+		item.Description = description
+		key := strings.ToLower(description)
+
+		index, exists := groupIndexByDescription[key]
+		if !exists {
+			index = len(grouped)
+			groupIndexByDescription[key] = index
+			grouped = append(grouped, []ExpenseLineItem{})
+		}
+		grouped[index] = append(grouped[index], item)
+	}
+
+	return grouped
+}
+
+func normalizeExpenseDescription(value string) string {
+	description := strings.TrimSpace(value)
+	if description == "" {
+		return "Other"
+	}
+	return description
 }
 
 func normalizeDateText(value string) string {
