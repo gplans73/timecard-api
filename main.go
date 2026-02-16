@@ -1264,23 +1264,20 @@ func generateExpenseMileageExcelFile(req ExpenseMileageRequest) ([]byte, error) 
 		employeeName = "YOUR NAME"
 	}
 
+	var logoTempPath string
 	if req.CompanyLogoBase64 != nil {
 		logoBase64 := strings.TrimSpace(*req.CompanyLogoBase64)
 		if logoBase64 != "" {
-			logoErr := insertLogoIntoSheet(
-				f,
-				logoBase64,
-				expenseSheet,
-				"H1",
-				0.45,
-				0.45,
-				6,
-				6,
-			)
+			tmpLogoPath, logoErr := insertLogoIntoExcel(f, logoBase64)
 			if logoErr != nil {
 				log.Printf("Warning: Could not insert expense logo: %v", logoErr)
+			} else {
+				logoTempPath = tmpLogoPath
 			}
 		}
+	}
+	if logoTempPath != "" {
+		defer os.Remove(logoTempPath)
 	}
 
 	// Header values
