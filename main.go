@@ -911,6 +911,67 @@ func insertLogoIntoSheet(
 	return nil
 }
 
+// insertLogoIntoSheetFitted inserts a logo at a consistent visual size by fitting it
+// inside a fixed bounding box while preserving aspect ratio.
+func insertLogoIntoSheetFitted(
+	f *excelize.File,
+	logoBase64 string,
+	sheetName string,
+	cell string,
+	maxWidthPx int,
+	maxHeightPx int,
+	offsetX int,
+	offsetY int,
+) error {
+	logoData, err := base64.StdEncoding.DecodeString(logoBase64)
+	if err != nil {
+		return fmt.Errorf("failed to decode base64 logo: %w", err)
+	}
+
+	cfg, format, err := image.DecodeConfig(bytes.NewReader(logoData))
+	if err != nil {
+		return fmt.Errorf("failed to decode logo image: %w", err)
+	}
+
+	ext := ".png"
+	switch strings.ToLower(format) {
+	case "jpeg", "jpg":
+		ext = ".jpg"
+	case "png":
+		ext = ".png"
+	default:
+		return fmt.Errorf("unsupported logo format: %s", format)
+	}
+
+	scale := 1.0
+	if cfg.Width > 0 && cfg.Height > 0 && maxWidthPx > 0 && maxHeightPx > 0 {
+		widthScale := float64(maxWidthPx) / float64(cfg.Width)
+		heightScale := float64(maxHeightPx) / float64(cfg.Height)
+		scale = math.Min(widthScale, heightScale)
+		// Keep scaling deterministic and avoid enlarging tiny logos.
+		if scale > 1.0 {
+			scale = 1.0
+		}
+	}
+
+	err = f.AddPictureFromBytes(sheetName, cell, &excelize.Picture{
+		Extension: ext,
+		File:      logoData,
+		Format: &excelize.GraphicOptions{
+			ScaleX:          scale,
+			ScaleY:          scale,
+			OffsetX:         offsetX,
+			OffsetY:         offsetY,
+			LockAspectRatio: true,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to add fitted picture to %s!%s: %w", sheetName, cell, err)
+	}
+
+	return nil
+}
+
 func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, weekData WeekData, weekNum int, jobNameMap map[string]string) error {
 	weekStart, err := time.Parse(time.RFC3339, weekData.WeekStartDate)
 	if err != nil {
@@ -1264,20 +1325,24 @@ func generateExpenseMileageExcelFile(req ExpenseMileageRequest) ([]byte, error) 
 		employeeName = "YOUR NAME"
 	}
 
-	var logoTempPath string
 	if req.CompanyLogoBase64 != nil {
 		logoBase64 := strings.TrimSpace(*req.CompanyLogoBase64)
 		if logoBase64 != "" {
-			tmpLogoPath, logoErr := insertLogoIntoExcel(f, logoBase64)
+			// Match timecard-like header sizing: keep logo constrained to the top-left placeholder.
+			logoErr := insertLogoIntoSheetFitted(
+				f,
+				logoBase64,
+				expenseSheet,
+				"A2",
+				170, // max width in px
+				120, // max height in px
+				8,
+				0,
+			)
 			if logoErr != nil {
 				log.Printf("Warning: Could not insert expense logo: %v", logoErr)
-			} else {
-				logoTempPath = tmpLogoPath
 			}
 		}
-	}
-	if logoTempPath != "" {
-		defer os.Remove(logoTempPath)
 	}
 
 	// Header values
