@@ -1351,8 +1351,9 @@ func generateExpenseMileageExcelFile(req ExpenseMileageRequest) ([]byte, error) 
 	}
 
 	// Header values
-	_ = setCellPreserveStyle(f, expenseSheet, "C8", submittalDateText)
-	_ = setCellPreserveStyle(f, expenseSheet, "H8", employeeName)
+	setDateCellWithFallback(f, expenseSheet, "C6", submittalDateText)
+	_ = setCellPreserveStyle(f, expenseSheet, "H6", employeeName)
+	ensureExpenseHeaderRow(f, expenseSheet)
 	_ = setCellPreserveStyle(f, mileageSheet, "E1", monthLabel)
 
 	// Update Phase Code block from latest Settings list
@@ -1375,8 +1376,8 @@ func generateExpenseMileageExcelFile(req ExpenseMileageRequest) ([]byte, error) 
 	applyExpenseSubmissionEmail(f, expenseSheet, req.SubmissionEmail)
 
 	// Expense data rows
-	const expenseStartRow = 11
-	const expenseEndRow = 41
+	const expenseStartRow = 9
+	const expenseEndRow = 39
 
 	for row := expenseStartRow; row <= expenseEndRow; row++ {
 		for _, col := range []string{"A", "B", "C", "D", "E", "F", "G", "H", "I", "J"} {
@@ -1391,9 +1392,9 @@ func generateExpenseMileageExcelFile(req ExpenseMileageRequest) ([]byte, error) 
 			break
 		}
 
-		_ = setCellPreserveStyle(f, expenseSheet, fmt.Sprintf("A%d", row), normalizeDateText(item.Date))
-		_ = setCellPreserveStyle(f, expenseSheet, fmt.Sprintf("B%d", row), strings.TrimSpace(item.JobNumber))
-		_ = setCellPreserveStyle(f, expenseSheet, fmt.Sprintf("C%d", row), strings.TrimSpace(item.MaterialCode))
+		setDateCellWithFallback(f, expenseSheet, fmt.Sprintf("A%d", row), item.Date)
+		setStringOrNumericCell(f, expenseSheet, fmt.Sprintf("B%d", row), item.JobNumber)
+		setStringOrNumericCell(f, expenseSheet, fmt.Sprintf("C%d", row), item.MaterialCode)
 		_ = setCellPreserveStyle(f, expenseSheet, fmt.Sprintf("D%d", row), strings.TrimSpace(item.Company))
 		_ = setCellPreserveStyle(f, expenseSheet, fmt.Sprintf("E%d", row), strings.TrimSpace(item.Description))
 
@@ -1450,6 +1451,55 @@ func setOptionalNumericCell(f *excelize.File, sheet, cell string, value *float64
 		return
 	}
 	_ = setCellPreserveStyle(f, sheet, cell, roundTo(*value, 2))
+}
+
+func ensureExpenseHeaderRow(f *excelize.File, sheet string) {
+	headers := map[string]string{
+		"A8": "Date",
+		"B8": "Job #",
+		"C8": "Mat. Code",
+		"D8": "Company (who issued receipt)",
+		"E8": "Description",
+		"F8": "Office Use\nOnly\nDisburse",
+		"G8": "Before Tax",
+		"H8": "PST",
+		"I8": "GST",
+		"J8": "Total after Tax",
+	}
+
+	for cell, value := range headers {
+		_ = setCellPreserveStyle(f, sheet, cell, value)
+	}
+}
+
+func setDateCellWithFallback(f *excelize.File, sheet, cell, value string) {
+	parsed := parseFlexibleDate(value)
+	if !parsed.IsZero() {
+		_ = setCellPreserveStyle(f, sheet, cell, parsed)
+		return
+	}
+	_ = setCellPreserveStyle(f, sheet, cell, strings.TrimSpace(value))
+}
+
+func setStringOrNumericCell(f *excelize.File, sheet, cell, value string) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		_ = setCellPreserveStyle(f, sheet, cell, "")
+		return
+	}
+
+	// For purely numeric codes without leading zeroes, write numeric values so Excel
+	// does not flag "Number stored as text" (green triangles).
+	if regexp.MustCompile(`^\d+$`).MatchString(trimmed) {
+		if len(trimmed) == 1 || trimmed[0] != '0' {
+			if n, err := strconv.ParseInt(trimmed, 10, 64); err == nil {
+				_ = setCellPreserveStyle(f, sheet, cell, n)
+				return
+			}
+		}
+	}
+
+	_ = setCellPreserveStyle(f, sheet, cell, trimmed)
 }
 
 func applyExpenseSubmissionEmail(f *excelize.File, sheet string, submissionEmail *string) {
