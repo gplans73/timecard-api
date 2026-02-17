@@ -752,6 +752,8 @@ func generateExcelFile(req TimecardRequest) ([]byte, error) {
 	}
 
 	log.Printf("Template has %d sheets: %v", len(sheets), sheets)
+	resolvedSheetForWeek := make(map[int]string)
+	entriesForWeek := make(map[int][]Entry)
 
 	for _, weekData := range req.Weeks {
 		sheetIndex := weekData.WeekNumber - 1
@@ -762,6 +764,8 @@ func generateExcelFile(req TimecardRequest) ([]byte, error) {
 		}
 
 		sheetName := sheets[sheetIndex]
+		resolvedSheetForWeek[weekData.WeekNumber] = sheetName
+		entriesForWeek[weekData.WeekNumber] = append([]Entry{}, weekData.Entries...)
 
 		// Log marker cells before filling
 		a3Before, _ := f.GetCellValue(sheetName, "A3")
@@ -781,6 +785,29 @@ func generateExcelFile(req TimecardRequest) ([]byte, error) {
 		ad3After, _ := f.GetCellValue(sheetName, "AD3")
 		log.Printf("MARKER AFTER fill: sheet=%s A3=%q AD3=%q", sheetName, a3After, ad3After)
 	}
+
+	// Stabilize final-week Summary Totals values by writing the merged values directly
+	// from Week 1 + Week 2 source summary rows. This avoids stale cross-sheet formula
+	// caches when converting to PDF and guarantees the final week includes prior-week data.
+	week1Sheet := resolvedSheetForWeek[1]
+	week2Sheet := resolvedSheetForWeek[2]
+	if week1Sheet == "" && len(sheets) > 0 {
+		week1Sheet = sheets[0]
+	}
+	if week2Sheet == "" && len(sheets) > 1 {
+		week2Sheet = sheets[1]
+	}
+	if week1Sheet != "" && week2Sheet != "" {
+		applyFinalSummaryTotals(
+			f,
+			week2Sheet,
+			entriesForWeek[1],
+			entriesForWeek[2],
+			getOnCallDailyAmount(req),
+			getOnCallPerCallAmount(req),
+		)
+	}
+
 	buffer, err := f.WriteToBuffer()
 	if err != nil {
 		return nil, err
@@ -800,6 +827,104 @@ func generateExcelFile(req TimecardRequest) ([]byte, error) {
 	}
 
 	return buffer.Bytes(), nil
+}
+
+type weekSummaryTotals struct {
+	OT         float64
+	DT         float64
+	VP         float64
+	NS         float64
+	STAT       float64
+	OnCall     float64
+	OnCallByN  float64
+	HasOnCall  bool
+	OnCallHits int
+}
+
+func applyFinalSummaryTotals(
+	f *excelize.File,
+	week2Sheet string,
+	week1Entries []Entry,
+	week2Entries []Entry,
+	onCallDailyAmount float64,
+	onCallPerCallAmount float64,
+) {
+	week1Totals := summarizeWeekEntries(week1Entries, onCallDailyAmount, onCallPerCallAmount)
+	week2Totals := summarizeWeekEntries(week2Entries, onCallDailyAmount, onCallPerCallAmount)
+
+	combined := weekSummaryTotals{
+		OT:        roundTo(week1Totals.OT+week2Totals.OT, 2),
+		DT:        roundTo(week1Totals.DT+week2Totals.DT, 2),
+		VP:        roundTo(week1Totals.VP+week2Totals.VP, 2),
+		NS:        roundTo(week1Totals.NS+week2Totals.NS, 2),
+		STAT:      roundTo(week1Totals.STAT+week2Totals.STAT, 2),
+		OnCall:    roundTo(week1Totals.OnCall+week2Totals.OnCall, 2),
+		OnCallByN: roundTo(week1Totals.OnCallByN+week2Totals.OnCallByN, 2),
+	}
+
+	writeSummaryValue := func(row int, value float64, blankWhenZero bool) {
+		cell := fmt.Sprintf("AK%d", row)
+		if blankWhenZero && math.Abs(value) < 0.0000001 {
+			_ = setCellPreserveStyle(f, week2Sheet, cell, "")
+			return
+		}
+		_ = setCellPreserveStyle(f, week2Sheet, cell, value)
+	}
+
+	// Summary Totals table (Week 2 sheet):
+	// AJ19 OT, AJ20 DT, AJ21 VP, AJ22 NS, AJ23 STAT, AJ24 On Call, AJ25 # of On Call
+	writeSummaryValue(19, combined.OT, false)
+	writeSummaryValue(20, combined.DT, false)
+	writeSummaryValue(21, combined.VP, true)
+	writeSummaryValue(22, combined.NS, false)
+	writeSummaryValue(23, combined.STAT, true)
+	writeSummaryValue(24, combined.OnCall, true)
+	writeSummaryValue(25, combined.OnCallByN, true)
+}
+
+func summarizeWeekEntries(
+	entries []Entry,
+	onCallDailyAmount float64,
+	onCallPerCallAmount float64,
+) weekSummaryTotals {
+	var totals weekSummaryTotals
+
+	for _, entry := range entries {
+		code := strings.ToUpper(strings.TrimSpace(entry.LabourCode))
+
+		isOnCall := code == "ON CALL" || code == "ONCALL" || code == "ONC"
+		isVP := code == "VP"
+		isSTAT := code == "H" || strings.Contains(code, "STAT")
+		isDT := code == "DT" || strings.Contains(code, "DOUBLE TIME")
+
+		if isOnCall {
+			totals.HasOnCall = true
+			totals.OnCallHits++
+			continue
+		}
+
+		if isSTAT {
+			totals.STAT += entry.Hours
+		}
+		if isVP {
+			totals.VP += entry.Hours
+		}
+		if entry.IsNightShift {
+			totals.NS += entry.Hours
+		}
+		if isDT {
+			totals.DT += entry.Hours
+		} else if entry.Overtime {
+			totals.OT += entry.Hours
+		}
+	}
+
+	if totals.HasOnCall {
+		totals.OnCall = onCallDailyAmount
+		totals.OnCallByN = float64(totals.OnCallHits) * onCallPerCallAmount
+	}
+
+	return totals
 }
 
 // insertLogoIntoExcel inserts a logo image into the Excel file
