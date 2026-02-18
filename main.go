@@ -321,7 +321,7 @@ type TimecardRequest struct {
 	LabourCodes         []LabourCode `json:"labour_codes,omitempty"`
 	OnCallDailyAmount   *float64     `json:"on_call_daily_amount,omitempty"`
 	OnCallPerCallAmount *float64     `json:"on_call_per_call_amount,omitempty"`
-	// CompanyLogoBase64 removed to match working version exactly - logo functionality disabled to preserve formatting
+	CompanyLogoBase64   *string      `json:"company_logo_base64,omitempty"`
 }
 
 // Job represents a job/project with its number and display name
@@ -749,6 +749,37 @@ func generateExcelFile(req TimecardRequest) ([]byte, error) {
 	sheets := f.GetSheetList()
 	if len(sheets) == 0 {
 		return nil, fmt.Errorf("no sheets found in template")
+	}
+
+	// Insert custom export logo (if provided) into all sheets.
+	// This ensures Timecard Preview/PDF/Excel match the "PDF & Excel Export Logo" setting.
+	if req.CompanyLogoBase64 != nil {
+		logoBase64 := strings.TrimSpace(*req.CompanyLogoBase64)
+		if logoBase64 != "" {
+			insertedCount := 0
+			for _, sheetName := range sheets {
+				err := insertLogoIntoSheetFitted(
+					f,
+					logoBase64,
+					sheetName,
+					"A2",
+					170, // max width in px
+					90,  // max height in px
+					6,   // horizontal offset in px
+					0,   // vertical offset in px
+				)
+				if err != nil {
+					log.Printf("Warning: Could not insert timecard logo on sheet %s: %v", sheetName, err)
+					continue
+				}
+				insertedCount++
+			}
+			if insertedCount == 0 {
+				log.Printf("Warning: Timecard logo provided but could not be inserted on any sheet")
+			} else {
+				log.Printf("Inserted custom timecard logo on %d sheet(s)", insertedCount)
+			}
+		}
 	}
 
 	log.Printf("Template has %d sheets: %v", len(sheets), sheets)
