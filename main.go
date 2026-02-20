@@ -753,20 +753,22 @@ func generateExcelFile(req TimecardRequest) ([]byte, error) {
 
 	// Insert custom export logo (if provided) into all sheets.
 	// This ensures Timecard Preview/PDF/Excel match the "PDF & Excel Export Logo" setting.
+	// First remove any template header logo so we don't render two logos on top of each other.
 	if req.CompanyLogoBase64 != nil {
 		logoBase64 := strings.TrimSpace(*req.CompanyLogoBase64)
 		if logoBase64 != "" {
 			insertedCount := 0
 			for _, sheetName := range sheets {
+				clearTemplateHeaderLogoPictures(f, sheetName)
 				err := insertLogoIntoSheetFitted(
 					f,
 					logoBase64,
 					sheetName,
-					"A2",
-					170, // max width in px
-					90,  // max height in px
-					6,   // horizontal offset in px
-					0,   // vertical offset in px
+					"A1",
+					268, // match template header logo width (~268 px)
+					62,  // match template header logo height (~60 px)
+					12,  // horizontal offset in px
+					6,   // vertical offset in px
 				)
 				if err != nil {
 					log.Printf("Warning: Could not insert timecard logo on sheet %s: %v", sheetName, err)
@@ -1127,6 +1129,18 @@ func insertLogoIntoSheetFitted(
 	}
 
 	return nil
+}
+
+// clearTemplateHeaderLogoPictures removes any pre-baked template logo images in the
+// top-left header area so a custom export logo doesn't overlap with the default logo.
+func clearTemplateHeaderLogoPictures(f *excelize.File, sheetName string) {
+	// Template logos are anchored near A1. We clear a small header window to be safe.
+	for row := 1; row <= 4; row++ {
+		for col := 'A'; col <= 'L'; col++ {
+			cell := fmt.Sprintf("%c%d", col, row)
+			_ = f.DeletePicture(sheetName, cell)
+		}
+	}
 }
 
 func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, weekData WeekData, weekNum int, jobNameMap map[string]string) error {
