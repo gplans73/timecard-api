@@ -17,6 +17,7 @@ import (
 	"net/smtp"
 	"os"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -1559,7 +1560,7 @@ func generateExpenseMileageExcelFile(req ExpenseMileageRequest) ([]byte, error) 
 		}
 	}
 
-	groupedExpenses := groupExpenseItemsByDescription(req.Expenses)
+	groupedExpenses := groupExpenseItemsByMaterialCode(req.Expenses)
 	row := expenseStartRow
 
 expenseWriteLoop:
@@ -1720,29 +1721,91 @@ func applyExpenseSubmissionEmail(f *excelize.File, sheet string, submissionEmail
 	}
 }
 
-func groupExpenseItemsByDescription(items []ExpenseLineItem) [][]ExpenseLineItem {
+func groupExpenseItemsByMaterialCode(items []ExpenseLineItem) [][]ExpenseLineItem {
 	if len(items) == 0 {
 		return nil
 	}
 
-	grouped := make([][]ExpenseLineItem, 0)
-	groupIndexByDescription := make(map[string]int)
+	normalizedItems := make([]ExpenseLineItem, len(items))
+	copy(normalizedItems, items)
 
-	for _, item := range items {
-		description := normalizeExpenseDescription(item.Description)
-		item.Description = description
-		key := strings.ToLower(description)
+	sort.SliceStable(normalizedItems, func(i, j int) bool {
+		leftKey := expenseMaterialGroupKey(normalizedItems[i].MaterialCode)
+		rightKey := expenseMaterialGroupKey(normalizedItems[j].MaterialCode)
 
-		index, exists := groupIndexByDescription[key]
-		if !exists {
-			index = len(grouped)
-			groupIndexByDescription[key] = index
-			grouped = append(grouped, []ExpenseLineItem{})
+		if leftKey != rightKey {
+			if leftKey == "" {
+				return false
+			}
+			if rightKey == "" {
+				return true
+			}
+			return strings.Compare(leftKey, rightKey) < 0
 		}
-		grouped[index] = append(grouped[index], item)
+
+		leftDate := parseFlexibleDate(normalizedItems[i].Date)
+		rightDate := parseFlexibleDate(normalizedItems[j].Date)
+		switch {
+		case !leftDate.IsZero() && !rightDate.IsZero() && !leftDate.Equal(rightDate):
+			return leftDate.Before(rightDate)
+		case strings.TrimSpace(normalizedItems[i].Date) != strings.TrimSpace(normalizedItems[j].Date):
+			return strings.TrimSpace(normalizedItems[i].Date) < strings.TrimSpace(normalizedItems[j].Date)
+		case strings.TrimSpace(normalizedItems[i].Company) != strings.TrimSpace(normalizedItems[j].Company):
+			return strings.TrimSpace(normalizedItems[i].Company) < strings.TrimSpace(normalizedItems[j].Company)
+		default:
+			return strings.TrimSpace(normalizedItems[i].Description) < strings.TrimSpace(normalizedItems[j].Description)
+		}
+	})
+
+	grouped := make([][]ExpenseLineItem, 0)
+	var currentGroup []ExpenseLineItem
+	currentKey := ""
+
+	flushCurrentGroup := func() {
+		if len(currentGroup) == 0 {
+			return
+		}
+
+		var disburseTotal float64
+		hasDisburse := false
+		for index := range currentGroup {
+			currentGroup[index].Description = normalizeExpenseDescription(currentGroup[index].Description)
+			if currentGroup[index].OfficeDisburse != nil {
+				disburseTotal += *currentGroup[index].OfficeDisburse
+				hasDisburse = true
+			}
+			currentGroup[index].OfficeDisburse = nil
+		}
+
+		if hasDisburse {
+			total := roundTo(disburseTotal, 2)
+			currentGroup[len(currentGroup)-1].OfficeDisburse = &total
+		}
+
+		grouped = append(grouped, currentGroup)
+		currentGroup = nil
 	}
 
+	for _, item := range normalizedItems {
+		key := expenseMaterialGroupKey(item.MaterialCode)
+		if len(currentGroup) == 0 {
+			currentKey = key
+			currentGroup = append(currentGroup, item)
+			continue
+		}
+		if key != currentKey {
+			flushCurrentGroup()
+			currentKey = key
+		}
+		currentGroup = append(currentGroup, item)
+	}
+
+	flushCurrentGroup()
 	return grouped
+}
+
+func expenseMaterialGroupKey(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
 }
 
 func normalizeExpenseDescription(value string) string {
