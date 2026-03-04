@@ -14,13 +14,12 @@ ENV GOPROXY=https://proxy.golang.org,direct
 ENV GOPRIVATE=""
 ENV GOSUMDB=sum.golang.org
 
-# Do not require go.sum to exist in the repo. This keeps the build from
-# failing at COPY time if go.sum is missing remotely.
+# Keep dependency bootstrap resilient even if go.sum is missing/stale.
 COPY go.mod ./
 RUN go mod download
 
 COPY . .
-RUN go mod download
+RUN go mod tidy && go mod download
 
 # Fail build early if either template file is missing from the image.
 RUN ls -lah /app && \
