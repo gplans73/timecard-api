@@ -1625,7 +1625,7 @@ expenseWriteLoop:
 		return nil, fmt.Errorf("update mileage footer: %w", err)
 	}
 	if err := setSheetPrintArea(f, mileageSheet, fmt.Sprintf("$A$1:$E$%d", mileageFooterRow)); err != nil {
-		return nil, fmt.Errorf("set mileage print area: %w", err)
+		log.Printf("Warning: Could not update mileage print area (continuing): %v", err)
 	}
 
 	buffer, err := f.WriteToBuffer()
@@ -1690,15 +1690,34 @@ func updateMileageFooter(f *excelize.File, sheet string, startRow, footerRow int
 }
 
 func setSheetPrintArea(f *excelize.File, sheet, ref string) error {
+	// excelize v2.8.x rejects built-in names that include '.', so setting
+	// "_xlnm.Print_Area" via SetDefinedName can fail. We try a best-effort
+	// update and fall back silently so workbook generation never fails.
 	_ = f.DeleteDefinedName(&excelize.DefinedName{
 		Name:  "_xlnm.Print_Area",
 		Scope: sheet,
 	})
-	return f.SetDefinedName(&excelize.DefinedName{
+	if err := f.SetDefinedName(&excelize.DefinedName{
 		Name:     "_xlnm.Print_Area",
 		Scope:    sheet,
 		RefersTo: fmt.Sprintf("%s!%s", sheet, ref),
+	}); err == nil {
+		return nil
+	}
+
+	// Fallback alias for older excelize validation rules.
+	_ = f.DeleteDefinedName(&excelize.DefinedName{
+		Name:  "Print_Area",
+		Scope: sheet,
 	})
+	if err := f.SetDefinedName(&excelize.DefinedName{
+		Name:     "Print_Area",
+		Scope:    sheet,
+		RefersTo: fmt.Sprintf("%s!%s", sheet, ref),
+	}); err != nil {
+		return err
+	}
+	return nil
 }
 
 func setOptionalNumericCell(f *excelize.File, sheet, cell string, value *float64) {
