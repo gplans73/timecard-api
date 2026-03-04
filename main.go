@@ -1530,6 +1530,12 @@ func generateExpenseMileageExcelFile(req ExpenseMileageRequest) ([]byte, error) 
 	ensureExpenseHeaderRow(f, expenseSheet)
 	_ = setCellPreserveStyle(f, mileageSheet, "E1", monthLabel)
 
+	mileageFooterRow := detectMileageFooterRow(f, mileageSheet)
+	mileageEndRow := mileageFooterRow - 1
+	if mileageEndRow < 8 {
+		mileageEndRow = 8
+	}
+
 	// Update Phase Code block from latest Settings list
 	expenseCodeLines := make([]string, 0, len(req.ExpenseCodes))
 	for _, item := range req.ExpenseCodes {
@@ -1595,7 +1601,6 @@ expenseWriteLoop:
 
 	// Mileage data rows
 	const mileageStartRow = 8
-	const mileageEndRow = 47
 	for row := mileageStartRow; row <= mileageEndRow; row++ {
 		for _, col := range []string{"A", "B", "C", "D", "E"} {
 			cell := fmt.Sprintf("%s%d", col, row)
@@ -1616,6 +1621,13 @@ expenseWriteLoop:
 		_ = setCellPreserveStyle(f, mileageSheet, fmt.Sprintf("E%d", row), roundTo(item.Reimbursement, 2))
 	}
 
+	if err := updateMileageFooter(f, mileageSheet, mileageStartRow, mileageFooterRow); err != nil {
+		return nil, fmt.Errorf("update mileage footer: %w", err)
+	}
+	if err := setSheetPrintArea(f, mileageSheet, fmt.Sprintf("$A$1:$E$%d", mileageFooterRow)); err != nil {
+		return nil, fmt.Errorf("set mileage print area: %w", err)
+	}
+
 	buffer, err := f.WriteToBuffer()
 	if err != nil {
 		return nil, fmt.Errorf("write expense/mileage workbook: %w", err)
@@ -1631,6 +1643,62 @@ expenseWriteLoop:
 	}
 
 	return buffer.Bytes(), nil
+}
+
+func detectMileageFooterRow(f *excelize.File, sheet string) int {
+	const fallbackFooterRow = 48
+
+	for row := 1; row <= 200; row++ {
+		for _, col := range []string{"A", "B", "C", "D", "E"} {
+			value, err := f.GetCellValue(sheet, fmt.Sprintf("%s%d", col, row))
+			if err != nil {
+				continue
+			}
+			if strings.EqualFold(strings.TrimSpace(value), "TOTAL") {
+				return row
+			}
+		}
+	}
+
+	return fallbackFooterRow
+}
+
+func updateMileageFooter(f *excelize.File, sheet string, startRow, footerRow int) error {
+	endRow := footerRow - 1
+	if endRow < startRow {
+		endRow = startRow
+	}
+
+	if err := setCellPreserveStyle(f, sheet, fmt.Sprintf("C%d", footerRow), "TOTAL"); err != nil {
+		return err
+	}
+	if err := f.SetCellFormula(sheet, fmt.Sprintf("D%d", footerRow), fmt.Sprintf("SUM(D%d:D%d)", startRow, endRow)); err != nil {
+		return err
+	}
+	if err := f.SetCellFormula(sheet, fmt.Sprintf("E%d", footerRow), fmt.Sprintf("SUM(E%d:E%d)", startRow, endRow)); err != nil {
+		return err
+	}
+
+	if styleID, err := f.GetCellStyle(sheet, fmt.Sprintf("D%d", footerRow)); err == nil && styleID != 0 {
+		_ = f.SetCellStyle(sheet, fmt.Sprintf("D%d", footerRow), fmt.Sprintf("D%d", footerRow), styleID)
+	}
+	if styleID, err := f.GetCellStyle(sheet, fmt.Sprintf("E%d", footerRow)); err == nil && styleID != 0 {
+		_ = f.SetCellStyle(sheet, fmt.Sprintf("E%d", footerRow), fmt.Sprintf("E%d", footerRow), styleID)
+	}
+
+	return nil
+}
+
+func setSheetPrintArea(f *excelize.File, sheet, ref string) error {
+	_ = f.DeleteDefinedName(&excelize.DefinedName{
+		Name:  "_xlnm.Print_Area",
+		Scope: sheet,
+	})
+	return f.SetDefinedName(&excelize.DefinedName{
+		Name:     "_xlnm.Print_Area",
+		Scope:    sheet,
+		RefersTo: fmt.Sprintf("%s!%s", sheet, ref),
+	})
 }
 
 func setOptionalNumericCell(f *excelize.File, sheet, cell string, value *float64) {
