@@ -1,5 +1,4 @@
 package main
-
 import (
 	"archive/zip"
 	"bytes"
@@ -21,10 +20,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
 	"github.com/xuri/excelize/v2"
 )
-
 // setCellPreserveStyle writes a value into a cell while preserving the cell's original style (borders, number formats, alignment, etc).
 // This is useful because some Excel clients will "repair" workbooks if the calc chain/style graph is inconsistent,
 // and the repair process can strip formatting. We keep the template style intact by re-applying it after writes.
@@ -38,7 +35,6 @@ func setCellPreserveStyle(f *excelize.File, sheet, cell string, value any) error
 	}
 	return nil
 }
-
 // removeCalcChain removes xl/calcChain.xml if present.
 // Note: In excelize v2.9.0+, calcChain is handled automatically.
 // This function is kept for compatibility but does nothing in newer versions.
@@ -50,21 +46,16 @@ func forceRecalcAndRemoveCalcChain(xlsx []byte) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open xlsx zip: %w", err)
 	}
-
 	var out bytes.Buffer
 	zw := zip.NewWriter(&out)
-
 	for _, zf := range zr.File {
 		name := zf.Name
-
 		// Drop calcChain entirely (stale calcChain is the common cause of "formulas show but values don't update")
 		if name == "xl/calcChain.xml" {
 			continue
 		}
-
 		// For files we need to modify, read into memory
 		needsModification := name == "xl/workbook.xml" || name == "xl/_rels/workbook.xml.rels" || name == "[Content_Types].xml"
-
 		if needsModification {
 			rc, err := zf.Open()
 			if err != nil {
@@ -77,7 +68,6 @@ func forceRecalcAndRemoveCalcChain(xlsx []byte) ([]byte, error) {
 				_ = zw.Close()
 				return nil, fmt.Errorf("read %s: %w", name, err)
 			}
-
 			switch name {
 			case "xl/workbook.xml":
 				b = ensureCalcPrAutoFull(b)
@@ -86,7 +76,6 @@ func forceRecalcAndRemoveCalcChain(xlsx []byte) ([]byte, error) {
 			case "[Content_Types].xml":
 				b = removeCalcChainContentType(b)
 			}
-
 			// Create new header, preserving original compression method
 			hdr := zf.FileHeader
 			// Force Store (no compression) for modified files to avoid recompression issues
@@ -109,13 +98,11 @@ func forceRecalcAndRemoveCalcChain(xlsx []byte) ([]byte, error) {
 				_ = zw.Close()
 				return nil, fmt.Errorf("open raw %s: %w", name, err)
 			}
-
 			// Get compressed size
 			compressedSize := int64(zf.CompressedSize64)
 			if compressedSize == 0 {
 				compressedSize = int64(zf.CompressedSize)
 			}
-
 			// Create raw writer to preserve compression
 			hdr := zf.FileHeader
 			w, err := zw.CreateRaw(&hdr)
@@ -123,7 +110,6 @@ func forceRecalcAndRemoveCalcChain(xlsx []byte) ([]byte, error) {
 				_ = zw.Close()
 				return nil, fmt.Errorf("create raw %s: %w", name, err)
 			}
-
 			// Copy raw compressed bytes
 			// Note: OpenRaw() returns io.Reader (not io.ReadCloser), so no Close() needed
 			if _, err := io.CopyN(w, rc, compressedSize); err != nil {
@@ -132,13 +118,11 @@ func forceRecalcAndRemoveCalcChain(xlsx []byte) ([]byte, error) {
 			}
 		}
 	}
-
 	if err := zw.Close(); err != nil {
 		return nil, fmt.Errorf("finalize xlsx zip: %w", err)
 	}
 	return out.Bytes(), nil
 }
-
 // extractStylesXMLFromTemplate extracts the original styles.xml from the template file
 // This preserves the exact formatting that works before excelize potentially corrupts it
 func extractStylesXMLFromTemplate(templatePath string) ([]byte, error) {
@@ -146,12 +130,10 @@ func extractStylesXMLFromTemplate(templatePath string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read template: %w", err)
 	}
-
 	zr, err := zip.NewReader(bytes.NewReader(templateData), int64(len(templateData)))
 	if err != nil {
 		return nil, fmt.Errorf("open template zip: %w", err)
 	}
-
 	for _, zf := range zr.File {
 		if zf.Name == "xl/styles.xml" {
 			rc, err := zf.Open()
@@ -159,7 +141,6 @@ func extractStylesXMLFromTemplate(templatePath string) ([]byte, error) {
 				return nil, fmt.Errorf("open styles.xml: %w", err)
 			}
 			defer rc.Close()
-
 			data, err := io.ReadAll(rc)
 			if err != nil {
 				return nil, fmt.Errorf("read styles.xml: %w", err)
@@ -167,20 +148,16 @@ func extractStylesXMLFromTemplate(templatePath string) ([]byte, error) {
 			return data, nil
 		}
 	}
-
 	return nil, fmt.Errorf("styles.xml not found in template")
 }
-
 // restoreStylesXML replaces the styles.xml in the Excel file with the original from the template
 func restoreStylesXML(excelData []byte, originalStylesXML []byte) ([]byte, error) {
 	zr, err := zip.NewReader(bytes.NewReader(excelData), int64(len(excelData)))
 	if err != nil {
 		return nil, fmt.Errorf("open excel zip: %w", err)
 	}
-
 	var out bytes.Buffer
 	zw := zip.NewWriter(&out)
-
 	for _, zf := range zr.File {
 		if zf.Name == "xl/styles.xml" {
 			// Replace with original styles.xml
@@ -200,49 +177,40 @@ func restoreStylesXML(excelData []byte, originalStylesXML []byte) ([]byte, error
 			if zf.Name == "xl/calcChain.xml" {
 				continue // Skip calcChain
 			}
-
 			// Use raw copy for unmodified files to preserve exact compression
 			rc, err := zf.OpenRaw()
 			if err != nil {
 				_ = zw.Close()
 				return nil, fmt.Errorf("open raw %s: %w", zf.Name, err)
 			}
-
 			compressedSize := int64(zf.CompressedSize64)
 			if compressedSize == 0 {
 				compressedSize = int64(zf.CompressedSize)
 			}
-
 			hdr := zf.FileHeader
 			w, err := zw.CreateRaw(&hdr)
 			if err != nil {
 				_ = zw.Close()
 				return nil, fmt.Errorf("create raw %s: %w", zf.Name, err)
 			}
-
 			if _, err := io.CopyN(w, rc, compressedSize); err != nil {
 				_ = zw.Close()
 				return nil, fmt.Errorf("copy raw %s: %w", zf.Name, err)
 			}
 		}
 	}
-
 	if err := zw.Close(); err != nil {
 		return nil, fmt.Errorf("finalize zip: %w", err)
 	}
-
 	return out.Bytes(), nil
 }
-
 func ensureCalcPrAutoFull(b []byte) []byte {
 	s := string(b)
-
 	// Match calcPr element - handles both:
 	// 1. Self-closing: <calcPr calcId="123"/>
 	// 2. Open/close pair: <calcPr calcId="123"></calcPr>
 	reSelfClosing := regexp.MustCompile(`<calcPr([^>]*)/\s*>`)
 	reOpenClose := regexp.MustCompile(`<calcPr([^>]*)>\s*</calcPr>`)
-
 	// Try self-closing first
 	if loc := reSelfClosing.FindStringIndex(s); loc != nil {
 		attrs := reSelfClosing.FindStringSubmatch(s)[1]
@@ -250,7 +218,6 @@ func ensureCalcPrAutoFull(b []byte) []byte {
 		s = s[:loc[0]] + newCalcPr + s[loc[1]:]
 		return []byte(s)
 	}
-
 	// Try open/close pair
 	if loc := reOpenClose.FindStringIndex(s); loc != nil {
 		attrs := reOpenClose.FindStringSubmatch(s)[1]
@@ -258,7 +225,6 @@ func ensureCalcPrAutoFull(b []byte) []byte {
 		s = s[:loc[0]] + newCalcPr + s[loc[1]:]
 		return []byte(s)
 	}
-
 	// No calcPr found -> insert a minimal one before </workbook>
 	insert := `<calcPr calcId="1" calcMode="auto" fullCalcOnLoad="1"/>`
 	if strings.Contains(s, "</workbook>") {
@@ -267,28 +233,23 @@ func ensureCalcPrAutoFull(b []byte) []byte {
 	}
 	return b
 }
-
 // buildCalcPrElement creates a calcPr element with the required attributes
 func buildCalcPrElement(existingAttrs string) string {
 	attrs := existingAttrs
-
 	// Ensure calcMode="auto"
 	if regexp.MustCompile(`calcMode="[^"]*"`).MatchString(attrs) {
 		attrs = regexp.MustCompile(`calcMode="[^"]*"`).ReplaceAllString(attrs, `calcMode="auto"`)
 	} else {
 		attrs = ` calcMode="auto"` + attrs
 	}
-
 	// Ensure fullCalcOnLoad="1"
 	if regexp.MustCompile(`fullCalcOnLoad="[^"]*"`).MatchString(attrs) {
 		attrs = regexp.MustCompile(`fullCalcOnLoad="[^"]*"`).ReplaceAllString(attrs, `fullCalcOnLoad="1"`)
 	} else {
 		attrs = ` fullCalcOnLoad="1"` + attrs
 	}
-
 	return `<calcPr` + attrs + `/>`
 }
-
 func removeCalcChainRelationships(b []byte) []byte {
 	s := string(b)
 	// Remove any relationship entries that reference calcChain (by Type or Target)
@@ -296,20 +257,17 @@ func removeCalcChainRelationships(b []byte) []byte {
 	s = re.ReplaceAllString(s, "")
 	return []byte(s)
 }
-
 func removeCalcChainContentType(b []byte) []byte {
 	s := string(b)
 	re := regexp.MustCompile(`(?s)<Override[^>]*PartName="/xl/calcChain\.xml"[^>]*/>`)
 	s = re.ReplaceAllString(s, "")
 	return []byte(s)
 }
-
 // =============================================================================
 // DATA STRUCTURES - Clear naming convention:
 //   - job_number: The project/job identifier (e.g., "234", "1017")
 //   - labour_code: The work type code (e.g., "227", "201", "On Call")
 // =============================================================================
-
 type TimecardRequest struct {
 	EmployeeName        string       `json:"employee_name"`
 	PayPeriodNum        int          `json:"pay_period_num"`
@@ -324,7 +282,6 @@ type TimecardRequest struct {
 	OnCallPerCallAmount *float64     `json:"on_call_per_call_amount,omitempty"`
 	CompanyLogoBase64   *string      `json:"company_logo_base64,omitempty"`
 }
-
 // Job represents a job/project with its number and display name
 // job_number: The project identifier (e.g., "234", "1017")
 // job_name: Human-readable name or description
@@ -332,13 +289,11 @@ type Job struct {
 	JobNumber string `json:"job_number"`
 	JobName   string `json:"job_name"`
 }
-
 // LabourCode represents a type of work
 type LabourCode struct {
 	Code string `json:"code"`
 	Name string `json:"name"`
 }
-
 // Entry represents a single timecard entry
 // job_number: The project/job identifier
 // labour_code: The work type code (e.g., "227", "On Call")
@@ -350,14 +305,12 @@ type Entry struct {
 	Overtime     bool    `json:"overtime"`
 	IsNightShift bool    `json:"is_night_shift"`
 }
-
 type WeekData struct {
 	WeekNumber    int     `json:"week_number"`
 	WeekStartDate string  `json:"week_start_date"`
 	WeekLabel     string  `json:"week_label"`
 	Entries       []Entry `json:"entries"`
 }
-
 // EmailTimecardRequest for the email endpoint
 type EmailTimecardRequest struct {
 	TimecardRequest
@@ -366,7 +319,6 @@ type EmailTimecardRequest struct {
 	Subject string  `json:"subject"`
 	Body    string  `json:"body"`
 }
-
 type ExpenseMileageRequest struct {
 	EmployeeName      string            `json:"employee_name"`
 	SubmittalDate     string            `json:"submittal_date,omitempty"`
@@ -377,7 +329,6 @@ type ExpenseMileageRequest struct {
 	CompanyLogoBase64 *string           `json:"company_logo_base64,omitempty"`
 	SubmissionEmail   *string           `json:"submission_email,omitempty"`
 }
-
 type ExpenseLineItem struct {
 	Date           string   `json:"date"`
 	JobNumber      string   `json:"job_number"`
@@ -390,7 +341,6 @@ type ExpenseLineItem struct {
 	GST            *float64 `json:"gst,omitempty"`
 	TotalAfterTax  *float64 `json:"total_after_tax,omitempty"`
 }
-
 type MileageLineItem struct {
 	Date          string  `json:"date"`
 	From          string  `json:"from"`
@@ -398,33 +348,27 @@ type MileageLineItem struct {
 	Distance      float64 `json:"distance"`
 	Reimbursement float64 `json:"reimbursement"`
 }
-
 type ExpenseCodeItem struct {
 	Name string `json:"name"`
 	Code string `json:"code"`
 }
-
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
-
 	// Log template info at startup
 	logTemplateInfo()
-
 	http.HandleFunc("/health", healthHandler)
 	http.HandleFunc("/api/generate-timecard", corsMiddleware(generateTimecardHandler))
 	http.HandleFunc("/api/email-timecard", corsMiddleware(emailTimecardHandler))
 	http.HandleFunc("/api/generate-pdf-timecard", corsMiddleware(generatePDFTimecardHandler))
 	http.HandleFunc("/api/generate-expense-mileage", corsMiddleware(generateExpenseMileageHandler))
-
 	log.Printf("Server starting on port %s", port)
 	if err := http.ListenAndServe(":"+port, nil); err != nil {
 		log.Fatal(err)
 	}
 }
-
 func logTemplateInfo() {
 	templatePath := "template.xlsx"
 	data, err := os.ReadFile(templatePath)
@@ -432,19 +376,15 @@ func logTemplateInfo() {
 		log.Printf("TEMPLATE startup: ERROR reading template: %v", err)
 		return
 	}
-
 	hash := sha256.Sum256(data)
 	hashStr := fmt.Sprintf("%x", hash)
-
 	f, err := excelize.OpenFile(templatePath)
 	if err != nil {
 		log.Printf("TEMPLATE startup: ERROR opening template: %v", err)
 		return
 	}
 	defer f.Close()
-
 	sheets := f.GetSheetList()
-
 	// Check marker cells
 	markers := make(map[string]string)
 	for _, sheet := range sheets {
@@ -453,51 +393,41 @@ func logTemplateInfo() {
 		markers[sheet+"!A3"] = a3
 		markers[sheet+"!AD3"] = ad3
 	}
-
 	commit := os.Getenv("RENDER_GIT_COMMIT")
 	if commit == "" {
 		commit = "unknown"
 	}
-
 	log.Printf("TEMPLATE startup: OK path=%s size=%d sha256=%s sheets=%v markers=%v commit=%s",
 		templatePath, len(data), hashStr, sheets, markers, commit)
 }
-
 func healthHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("OK"))
 }
-
 func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
-
 		next(w, r)
 	}
 }
-
 func generateTimecardHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-
 	var req TimecardRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		log.Printf("Error decoding request: %v", err)
 		http.Error(w, fmt.Sprintf("Invalid request: %v", err), http.StatusBadRequest)
 		return
 	}
-
 	log.Printf("Generating timecard for %s", req.EmployeeName)
-
 	// Debug: Log received data
 	log.Printf("=== REQUEST DEBUG ===")
 	log.Printf("Jobs received: %d", len(req.Jobs))
@@ -512,14 +442,12 @@ func generateTimecardHandler(w http.ResponseWriter, r *http.Request) {
 	log.Printf("On-Call Daily Amount: $%.2f, Per-Call Amount: $%.2f",
 		getOnCallDailyAmount(req), getOnCallPerCallAmount(req))
 	log.Printf("===================")
-
 	excelData, err := generateExcelFile(req)
 	if err != nil {
 		log.Printf("Error generating Excel: %v", err)
 		http.Error(w, fmt.Sprintf("Error generating timecard: %v", err), http.StatusInternalServerError)
 		return
 	}
-
 	// Post-process: remove calcChain.xml and force Excel to recalculate on open
 	excelData, err = forceRecalcAndRemoveCalcChain(excelData)
 	if err != nil {
@@ -528,52 +456,43 @@ func generateTimecardHandler(w http.ResponseWriter, r *http.Request) {
 	} else {
 		log.Printf("Post-processed Excel: removed calcChain, added fullCalcOnLoad")
 	}
-
 	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"timecard_%s.xlsx\"", req.EmployeeName))
 	w.WriteHeader(http.StatusOK)
 	w.Write(excelData)
-
 	log.Printf("Successfully generated timecard (%d bytes)", len(excelData))
 }
-
 func generateExpenseMileageHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-
 	var req ExpenseMileageRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		log.Printf("Error decoding expense/mileage request: %v", err)
 		http.Error(w, fmt.Sprintf("Invalid request: %v", err), http.StatusBadRequest)
 		return
 	}
-
 	log.Printf(
 		"Generating expense/mileage workbook for %s (expenses=%d mileage=%d)",
 		req.EmployeeName,
 		len(req.Expenses),
 		len(req.Mileage),
 	)
-
 	workbookData, err := generateExpenseMileageExcelFile(req)
 	if err != nil {
 		log.Printf("Error generating expense/mileage workbook: %v", err)
 		http.Error(w, fmt.Sprintf("Error generating workbook: %v", err), http.StatusInternalServerError)
 		return
 	}
-
 	workbookData, err = forceRecalcAndRemoveCalcChain(workbookData)
 	if err != nil {
 		log.Printf("Warning: Could not post-process expense/mileage workbook: %v", err)
 	}
-
 	fileNameEmployee := strings.ReplaceAll(strings.TrimSpace(req.EmployeeName), " ", "_")
 	if fileNameEmployee == "" {
 		fileNameEmployee = "employee"
 	}
-
 	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 	w.Header().Set(
 		"Content-Disposition",
@@ -581,32 +500,26 @@ func generateExpenseMileageHandler(w http.ResponseWriter, r *http.Request) {
 	)
 	w.WriteHeader(http.StatusOK)
 	w.Write(workbookData)
-
 	log.Printf("Successfully generated expense/mileage workbook (%d bytes)", len(workbookData))
 }
-
 func emailTimecardHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-
 	var req EmailTimecardRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		log.Printf("Error decoding request: %v", err)
 		http.Error(w, fmt.Sprintf("Invalid request: %v", err), http.StatusBadRequest)
 		return
 	}
-
 	log.Printf("Emailing timecard for %s to %s", req.EmployeeName, req.To)
-
 	excelData, err := generateExcelFile(req.TimecardRequest)
 	if err != nil {
 		log.Printf("Error generating Excel: %v", err)
 		http.Error(w, fmt.Sprintf("Error generating timecard: %v", err), http.StatusInternalServerError)
 		return
 	}
-
 	// Post-process: remove calcChain.xml and force Excel to recalculate on open
 	excelData, err = forceRecalcAndRemoveCalcChain(excelData)
 	if err != nil {
@@ -615,70 +528,57 @@ func emailTimecardHandler(w http.ResponseWriter, r *http.Request) {
 	} else {
 		log.Printf("Post-processed Excel for email: removed calcChain, added fullCalcOnLoad")
 	}
-
 	err = sendEmail(req.To, req.CC, req.Subject, req.Body, excelData, req.EmployeeName)
 	if err != nil {
 		log.Printf("Error sending email: %v", err)
 		http.Error(w, fmt.Sprintf("Error sending email: %v", err), http.StatusInternalServerError)
 		return
 	}
-
 	response := map[string]string{
 		"status":  "success",
 		"message": fmt.Sprintf("Email sent to %s", req.To),
 	}
-
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
-
 func generatePDFTimecardHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-
 	var req TimecardRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		log.Printf("Error decoding request: %v", err)
 		http.Error(w, fmt.Sprintf("Invalid request: %v", err), http.StatusBadRequest)
 		return
 	}
-
 	log.Printf("Generating PDF timecard for %s", req.EmployeeName)
-
 	pdfData, err := generatePDFFile(req)
 	if err != nil {
 		log.Printf("Error generating PDF: %v", err)
 		http.Error(w, fmt.Sprintf("Error generating PDF timecard: %v", err), http.StatusInternalServerError)
 		return
 	}
-
 	w.Header().Set("Content-Type", "application/pdf")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"timecard_%s.pdf\"", req.EmployeeName))
 	w.WriteHeader(http.StatusOK)
 	w.Write(pdfData)
-
 	log.Printf("Successfully generated PDF timecard (%d bytes)", len(pdfData))
 }
-
 func getOnCallDailyAmount(req TimecardRequest) float64 {
 	if req.OnCallDailyAmount != nil {
 		return *req.OnCallDailyAmount
 	}
 	return 300.0
 }
-
 func getOnCallPerCallAmount(req TimecardRequest) float64 {
 	if req.OnCallPerCallAmount != nil {
 		return *req.OnCallPerCallAmount
 	}
 	return 50.0
 }
-
 func generateExcelFile(req TimecardRequest) ([]byte, error) {
 	templatePath := "template.xlsx"
-
 	// Extract original styles.xml from template BEFORE excelize modifies it
 	// This preserves the exact formatting that works
 	originalStylesXML, err := extractStylesXMLFromTemplate(templatePath)
@@ -686,29 +586,24 @@ func generateExcelFile(req TimecardRequest) ([]byte, error) {
 		log.Printf("Warning: Could not extract styles.xml from template: %v (continuing anyway)", err)
 		originalStylesXML = nil
 	}
-
 	f, err := excelize.OpenFile(templatePath)
 	if err != nil {
 		log.Printf("Warning: Template not found, creating basic file: %v", err)
 		return generateBasicExcelFile(req)
 	}
 	defer f.Close()
-
 	// Build job name lookup map: jobNumber -> jobName
 	jobNameMap := make(map[string]string)
 	for _, job := range req.Jobs {
 		jobNameMap[job.JobNumber] = job.JobName
 	}
-
 	// If Weeks isn't provided, build Week 1/Week 2 from Entries
 	if len(req.Weeks) == 0 && len(req.Entries) > 0 {
 		var week1Start time.Time
 		var parseErr error
-
 		if req.WeekStartDate != "" {
 			week1Start, parseErr = time.Parse(time.RFC3339, req.WeekStartDate)
 		}
-
 		if parseErr != nil || req.WeekStartDate == "" {
 			earliest := time.Now().UTC()
 			for _, e := range req.Entries {
@@ -721,12 +616,9 @@ func generateExcelFile(req TimecardRequest) ([]byte, error) {
 			wd := int(earliest.Weekday())
 			week1Start = time.Date(earliest.Year(), earliest.Month(), earliest.Day()-wd, 0, 0, 0, 0, time.UTC)
 		}
-
 		week2Start := week1Start.AddDate(0, 0, 7)
-
 		w1 := WeekData{WeekNumber: 1, WeekStartDate: week1Start.Format(time.RFC3339), WeekLabel: "Week 1"}
 		w2 := WeekData{WeekNumber: 2, WeekStartDate: week2Start.Format(time.RFC3339), WeekLabel: "Week 2"}
-
 		for _, e := range req.Entries {
 			t, err := time.Parse(time.RFC3339, e.Date)
 			if err != nil {
@@ -738,7 +630,6 @@ func generateExcelFile(req TimecardRequest) ([]byte, error) {
 				w1.Entries = append(w1.Entries, e)
 			}
 		}
-
 		if len(w1.Entries) > 0 {
 			req.Weeks = append(req.Weeks, w1)
 		}
@@ -746,12 +637,10 @@ func generateExcelFile(req TimecardRequest) ([]byte, error) {
 			req.Weeks = append(req.Weeks, w2)
 		}
 	}
-
 	sheets := f.GetSheetList()
 	if len(sheets) == 0 {
 		return nil, fmt.Errorf("no sheets found in template")
 	}
-
 	// Insert custom export logo (if provided) into all sheets.
 	// This ensures Timecard Preview/PDF/Excel match the "PDF & Excel Export Logo" setting.
 	// First remove any template header logo so we don't render two logos on top of each other.
@@ -784,11 +673,9 @@ func generateExcelFile(req TimecardRequest) ([]byte, error) {
 			}
 		}
 	}
-
 	log.Printf("Template has %d sheets: %v", len(sheets), sheets)
 	resolvedSheetForWeek := make(map[int]string)
 	entriesForWeek := make(map[int][]Entry)
-
 	for _, weekData := range req.Weeks {
 		sheetIndex := weekData.WeekNumber - 1
 		if sheetIndex < 0 || sheetIndex >= len(sheets) {
@@ -796,30 +683,24 @@ func generateExcelFile(req TimecardRequest) ([]byte, error) {
 				weekData.WeekNumber, len(sheets))
 			sheetIndex = 0
 		}
-
 		sheetName := sheets[sheetIndex]
 		resolvedSheetForWeek[weekData.WeekNumber] = sheetName
 		entriesForWeek[weekData.WeekNumber] = append([]Entry{}, weekData.Entries...)
-
 		// Log marker cells before filling
 		a3Before, _ := f.GetCellValue(sheetName, "A3")
 		ad3Before, _ := f.GetCellValue(sheetName, "AD3")
 		log.Printf("MARKER BEFORE fill: sheet=%s A3=%q AD3=%q", sheetName, a3Before, ad3Before)
-
 		log.Printf("Filling sheet '%s' with Week %d data (%d entries)",
 			sheetName, weekData.WeekNumber, len(weekData.Entries))
-
 		err = fillWeekSheet(f, sheetName, req, weekData, weekData.WeekNumber, jobNameMap)
 		if err != nil {
 			log.Printf("Error filling Week %d: %v", weekData.WeekNumber, err)
 		}
-
 		// Log marker cells after filling
 		a3After, _ := f.GetCellValue(sheetName, "A3")
 		ad3After, _ := f.GetCellValue(sheetName, "AD3")
 		log.Printf("MARKER AFTER fill: sheet=%s A3=%q AD3=%q", sheetName, a3After, ad3After)
 	}
-
 	// Stabilize final-week Summary Totals values by writing the merged values directly
 	// from Week 1 + Week 2 source summary rows. This avoids stale cross-sheet formula
 	// caches when converting to PDF and guarantees the final week includes prior-week data.
@@ -841,12 +722,10 @@ func generateExcelFile(req TimecardRequest) ([]byte, error) {
 			getOnCallPerCallAmount(req),
 		)
 	}
-
 	buffer, err := f.WriteToBuffer()
 	if err != nil {
 		return nil, err
 	}
-
 	// Restore original styles.xml to preserve formatting
 	// excelize may rewrite styles.xml incorrectly, so we replace it with the original
 	if originalStylesXML != nil {
@@ -859,10 +738,8 @@ func generateExcelFile(req TimecardRequest) ([]byte, error) {
 		log.Printf("Restored original styles.xml to preserve formatting")
 		return restoredData, nil
 	}
-
 	return buffer.Bytes(), nil
 }
-
 type weekSummaryTotals struct {
 	OT         float64
 	DT         float64
@@ -874,7 +751,6 @@ type weekSummaryTotals struct {
 	HasOnCall  bool
 	OnCallHits int
 }
-
 func applyFinalSummaryTotals(
 	f *excelize.File,
 	week2Sheet string,
@@ -885,7 +761,6 @@ func applyFinalSummaryTotals(
 ) {
 	week1Totals := summarizeWeekEntries(week1Entries, onCallDailyAmount, onCallPerCallAmount)
 	week2Totals := summarizeWeekEntries(week2Entries, onCallDailyAmount, onCallPerCallAmount)
-
 	combined := weekSummaryTotals{
 		OT:        roundTo(week1Totals.OT+week2Totals.OT, 2),
 		DT:        roundTo(week1Totals.DT+week2Totals.DT, 2),
@@ -895,7 +770,6 @@ func applyFinalSummaryTotals(
 		OnCall:    roundTo(week1Totals.OnCall+week2Totals.OnCall, 2),
 		OnCallByN: roundTo(week1Totals.OnCallByN+week2Totals.OnCallByN, 2),
 	}
-
 	writeSummaryValue := func(row int, value float64, blankWhenZero bool) {
 		cell := fmt.Sprintf("AK%d", row)
 		if blankWhenZero && math.Abs(value) < 0.0000001 {
@@ -904,7 +778,6 @@ func applyFinalSummaryTotals(
 		}
 		_ = setCellPreserveStyle(f, week2Sheet, cell, value)
 	}
-
 	// Summary Totals table (Week 2 sheet):
 	// AJ19 OT, AJ20 DT, AJ21 VP, AJ22 NS, AJ23 STAT, AJ24 On Call, AJ25 # of On Call
 	writeSummaryValue(19, combined.OT, false)
@@ -915,28 +788,23 @@ func applyFinalSummaryTotals(
 	writeSummaryValue(24, combined.OnCall, true)
 	writeSummaryValue(25, combined.OnCallByN, true)
 }
-
 func summarizeWeekEntries(
 	entries []Entry,
 	onCallDailyAmount float64,
 	onCallPerCallAmount float64,
 ) weekSummaryTotals {
 	var totals weekSummaryTotals
-
 	for _, entry := range entries {
 		code := strings.ToUpper(strings.TrimSpace(entry.LabourCode))
-
 		isOnCall := code == "ON CALL" || code == "ONCALL" || code == "ONC"
 		isVP := code == "VP"
 		isSTAT := code == "H" || strings.Contains(code, "STAT")
 		isDT := code == "DT" || strings.Contains(code, "DOUBLE TIME")
-
 		if isOnCall {
 			totals.HasOnCall = true
 			totals.OnCallHits++
 			continue
 		}
-
 		if isSTAT {
 			totals.STAT += entry.Hours
 		}
@@ -952,15 +820,12 @@ func summarizeWeekEntries(
 			totals.OT += entry.Hours
 		}
 	}
-
 	if totals.HasOnCall {
 		totals.OnCall = onCallDailyAmount
 		totals.OnCallByN = float64(totals.OnCallHits) * onCallPerCallAmount
 	}
-
 	return totals
 }
-
 // insertLogoIntoExcel inserts a logo image into the Excel file
 // The logo is inserted at cell A1 (top-left corner) with appropriate sizing
 // Returns the temp file path so it can be cleaned up after WriteToBuffer is called
@@ -970,14 +835,12 @@ func insertLogoIntoExcel(f *excelize.File, logoBase64 string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to decode base64 logo: %w", err)
 	}
-
 	// Create a temporary file to store the logo image
 	tmpFile, err := os.CreateTemp("", "logo_*.png")
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp file: %w", err)
 	}
 	tmpFileName := tmpFile.Name()
-
 	// Write logo data to temp file
 	if _, err := tmpFile.Write(logoData); err != nil {
 		tmpFile.Close()
@@ -988,7 +851,6 @@ func insertLogoIntoExcel(f *excelize.File, logoBase64 string) (string, error) {
 		os.Remove(tmpFileName)
 		return "", fmt.Errorf("failed to close temp file: %w", err)
 	}
-
 	// Get all sheets and insert logo into each
 	// Only add to sheets that actually have data to minimize risk of corruption
 	sheets := f.GetSheetList()
@@ -1013,15 +875,12 @@ func insertLogoIntoExcel(f *excelize.File, logoBase64 string) (string, error) {
 		insertedCount++
 		log.Printf("Logo inserted into sheet %s", sheetName)
 	}
-
 	if insertedCount == 0 {
 		return tmpFileName, fmt.Errorf("logo insertion failed for all sheets")
 	}
-
 	// Return the temp file name so caller can clean it up after WriteToBuffer
 	return tmpFileName, nil
 }
-
 // insertLogoIntoSheet inserts a base64 PNG/JPG logo at a specific sheet/cell.
 func insertLogoIntoSheet(
 	f *excelize.File,
@@ -1037,12 +896,10 @@ func insertLogoIntoSheet(
 	if err != nil {
 		return fmt.Errorf("failed to decode base64 logo: %w", err)
 	}
-
 	_, format, err := image.DecodeConfig(bytes.NewReader(logoData))
 	if err != nil {
 		return fmt.Errorf("failed to decode logo image: %w", err)
 	}
-
 	ext := ".png"
 	switch strings.ToLower(format) {
 	case "jpeg", "jpg":
@@ -1052,7 +909,6 @@ func insertLogoIntoSheet(
 	default:
 		return fmt.Errorf("unsupported logo format: %s", format)
 	}
-
 	err = f.AddPictureFromBytes(sheetName, cell, &excelize.Picture{
 		Extension: ext,
 		File:      logoData,
@@ -1067,10 +923,8 @@ func insertLogoIntoSheet(
 	if err != nil {
 		return fmt.Errorf("failed to add picture to %s!%s: %w", sheetName, cell, err)
 	}
-
 	return nil
 }
-
 // insertLogoIntoSheetFitted inserts a logo at a consistent visual size by fitting it
 // inside a fixed bounding box while preserving aspect ratio.
 func insertLogoIntoSheetFitted(
@@ -1087,12 +941,10 @@ func insertLogoIntoSheetFitted(
 	if err != nil {
 		return fmt.Errorf("failed to decode base64 logo: %w", err)
 	}
-
 	cfg, format, err := image.DecodeConfig(bytes.NewReader(logoData))
 	if err != nil {
 		return fmt.Errorf("failed to decode logo image: %w", err)
 	}
-
 	ext := ".png"
 	switch strings.ToLower(format) {
 	case "jpeg", "jpg":
@@ -1102,7 +954,6 @@ func insertLogoIntoSheetFitted(
 	default:
 		return fmt.Errorf("unsupported logo format: %s", format)
 	}
-
 	scale := 1.0
 	if cfg.Width > 0 && cfg.Height > 0 && maxWidthPx > 0 && maxHeightPx > 0 {
 		widthScale := float64(maxWidthPx) / float64(cfg.Width)
@@ -1113,7 +964,6 @@ func insertLogoIntoSheetFitted(
 			scale = 1.0
 		}
 	}
-
 	err = f.AddPictureFromBytes(sheetName, cell, &excelize.Picture{
 		Extension: ext,
 		File:      logoData,
@@ -1128,10 +978,8 @@ func insertLogoIntoSheetFitted(
 	if err != nil {
 		return fmt.Errorf("failed to add fitted picture to %s!%s: %w", sheetName, cell, err)
 	}
-
 	return nil
 }
-
 // clearTemplateHeaderLogoPictures removes any pre-baked template logo images in the
 // top-left header area so a custom export logo doesn't overlap with the default logo.
 func clearTemplateHeaderLogoPictures(f *excelize.File, sheetName string) {
@@ -1143,16 +991,13 @@ func clearTemplateHeaderLogoPictures(f *excelize.File, sheetName string) {
 		}
 	}
 }
-
 func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, weekData WeekData, weekNum int, jobNameMap map[string]string) error {
 	weekStart, err := time.Parse(time.RFC3339, weekData.WeekStartDate)
 	if err != nil {
 		return fmt.Errorf("error parsing week start date: %v", err)
 	}
-
 	log.Printf("=== Filling Week %d ===", weekNum)
 	log.Printf("Week start: %s, Entries: %d", weekStart.Format("2006-01-02"), len(weekData.Entries))
-
 	// Header info
 	_ = setCellPreserveStyle(f, sheetName, "M2", req.EmployeeName)
 	_ = setCellPreserveStyle(f, sheetName, "AJ2", req.PayPeriodNum)
@@ -1160,31 +1005,25 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 	excelDate := timeToExcelDate(weekStart)
 	_ = setCellPreserveStyle(f, sheetName, "B4", excelDate)
 	_ = setCellPreserveStyle(f, sheetName, "AJ4", weekData.WeekLabel)
-
 	// Write On Call rate cells used by template formulas
 	// AM12 = Daily On Call rate, AM13 = Per Call rate
 	onCallDailyAmount := getOnCallDailyAmount(req)
 	onCallPerCallAmount := getOnCallPerCallAmount(req)
-
 	_ = setCellPreserveStyle(f, sheetName, "AM12", onCallDailyAmount)
 	_ = setCellPreserveStyle(f, sheetName, "AM13", onCallPerCallAmount)
 	log.Printf("  On Call rates written: AM12=$%.2f (daily), AM13=$%.2f (perCall)",
 		onCallDailyAmount, onCallPerCallAmount)
-
 	// Column layout for the timecard template:
 	// Labour code columns: C, E, G, I, K, M, O, Q, S, U, W, Y, AA, AC, AE, AG
 	// Job number columns:  D, F, H, J, L, N, P, R, T, V, X, Z, AB, AD, AF, AH
 	labourCodeColumns := []string{"C", "E", "G", "I", "K", "M", "O", "Q", "S", "U", "W", "Y", "AA", "AC", "AE", "AG"}
 	jobNumberColumns := []string{"D", "F", "H", "J", "L", "N", "P", "R", "T", "V", "X", "Z", "AB", "AD", "AF", "AH"}
-
 	// Get unique column keys for regular and overtime entries
 	// Column key format: "jobNumber|labourCode|isNight"
 	regularCols := getUniqueColumnsForType(weekData.Entries, false)
 	overtimeCols := getUniqueColumnsForType(weekData.Entries, true)
-
 	log.Printf("Regular columns: %v", regularCols)
 	log.Printf("Overtime columns: %v", overtimeCols)
-
 	// Fill Regular headers (Row 4)
 	for i, colKey := range regularCols {
 		if i >= len(labourCodeColumns) {
@@ -1192,22 +1031,18 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 			break
 		}
 		jobNumber, labourCode, isNight := splitColumnKey(colKey)
-
 		// Prepend "N" to labour code for night shift entries
 		labourCodeToWrite := labourCode
 		if isNight && labourCodeToWrite != "" {
 			labourCodeToWrite = "N" + labourCodeToWrite
 		}
-
 		// Write labour code to column C, E, G, etc. (row 4)
 		_ = setCellPreserveStyle(f, sheetName, labourCodeColumns[i]+"4", labourCodeToWrite)
 		// Write job number to column D, F, H, etc. (row 4)
 		_ = setCellPreserveStyle(f, sheetName, jobNumberColumns[i]+"4", jobNumber)
-
 		log.Printf("  REG header col %d: labourCode='%s' -> %s4, jobNumber='%s' -> %s4",
 			i, labourCodeToWrite, labourCodeColumns[i], jobNumber, jobNumberColumns[i])
 	}
-
 	// Fill Overtime headers (Row 15)
 	for i, colKey := range overtimeCols {
 		if i >= len(labourCodeColumns) {
@@ -1215,39 +1050,31 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 			break
 		}
 		jobNumber, labourCode, isNight := splitColumnKey(colKey)
-
 		labourCodeToWrite := labourCode
 		if isNight && labourCodeToWrite != "" {
 			labourCodeToWrite = "N" + labourCodeToWrite
 		}
-
 		// Write labour code to column C, E, G, etc. (row 15)
 		_ = setCellPreserveStyle(f, sheetName, labourCodeColumns[i]+"15", labourCodeToWrite)
 		// Write job number to column D, F, H, etc. (row 15)
 		_ = setCellPreserveStyle(f, sheetName, jobNumberColumns[i]+"15", jobNumber)
-
 		log.Printf("  OT header col %d: labourCode='%s' -> %s15, jobNumber='%s' -> %s15",
 			i, labourCodeToWrite, labourCodeColumns[i], jobNumber, jobNumberColumns[i])
 	}
-
 	// Organize entries by date and column key
 	// Map: dateKey -> columnKey -> hours
 	regularTimeEntries := make(map[string]map[string]float64)
 	overtimeEntries := make(map[string]map[string]float64)
-
 	for _, entry := range weekData.Entries {
 		entryDate, err := time.Parse(time.RFC3339, entry.Date)
 		if err != nil {
 			log.Printf("Warning: Could not parse entry date '%s': %v", entry.Date, err)
 			continue
 		}
-
 		dateKey := entryDate.Format("2006-01-02")
 		colKey := columnKey(entry)
-
 		log.Printf("  Processing entry: date=%s, jobNumber='%s', labourCode='%s', hours=%.2f, OT=%v, night=%v => key='%s'",
 			dateKey, entry.JobNumber, entry.LabourCode, entry.Hours, entry.Overtime, entry.IsNightShift, colKey)
-
 		if entry.Overtime {
 			if overtimeEntries[dateKey] == nil {
 				overtimeEntries[dateKey] = make(map[string]float64)
@@ -1260,22 +1087,18 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 			regularTimeEntries[dateKey][colKey] += entry.Hours
 		}
 	}
-
 	// Fill each day (7 days in a week)
 	for dayOffset := 0; dayOffset < 7; dayOffset++ {
 		currentDate := weekStart.AddDate(0, 0, dayOffset)
 		dateKey := currentDate.Format("2006-01-02")
 		excelDateSerial := timeToExcelDate(currentDate)
-
 		// Regular time row: 5-11 (dayOffset 0-6)
 		// Overtime row: 16-22 (dayOffset 0-6)
 		regularRow := 5 + dayOffset
 		overtimeRow := 16 + dayOffset
-
 		// Write dates to column B
 		_ = setCellPreserveStyle(f, sheetName, fmt.Sprintf("B%d", regularRow), excelDateSerial)
 		_ = setCellPreserveStyle(f, sheetName, fmt.Sprintf("B%d", overtimeRow), excelDateSerial)
-
 		// Fill regular time hours
 		if regularHours, exists := regularTimeEntries[dateKey]; exists {
 			for i, colKey := range regularCols {
@@ -1290,7 +1113,6 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 				}
 			}
 		}
-
 		// Fill overtime hours
 		if otHours, exists := overtimeEntries[dateKey]; exists {
 			for i, colKey := range overtimeCols {
@@ -1305,11 +1127,9 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 			}
 		}
 	}
-
 	log.Printf("=== Week %d completed ===", weekNum)
 	return nil
 }
-
 // columnKey creates a unique key for grouping entries by job+labour+night
 // Format: "jobNumber|labourCode|night" where night is "1" or "0"
 func columnKey(e Entry) string {
@@ -1321,7 +1141,6 @@ func columnKey(e Entry) string {
 	}
 	return fmt.Sprintf("%s|%s|%s", jobNumber, labourCode, night)
 }
-
 // splitColumnKey extracts components from a column key
 // Returns: jobNumber, labourCode, isNight
 func splitColumnKey(k string) (string, string, bool) {
@@ -1329,7 +1148,6 @@ func splitColumnKey(k string) (string, string, bool) {
 	jobNumber := ""
 	labourCode := ""
 	isNight := false
-
 	if len(parts) > 0 {
 		jobNumber = parts[0]
 	}
@@ -1341,12 +1159,10 @@ func splitColumnKey(k string) (string, string, bool) {
 	}
 	return jobNumber, labourCode, isNight
 }
-
 // getUniqueColumnsForType returns unique column keys for either regular or overtime entries
 func getUniqueColumnsForType(entries []Entry, isOvertime bool) []string {
 	seen := make(map[string]bool)
 	var result []string
-
 	for _, entry := range entries {
 		if entry.Overtime != isOvertime {
 			continue
@@ -1359,17 +1175,14 @@ func getUniqueColumnsForType(entries []Entry, isOvertime bool) []string {
 	}
 	return result
 }
-
 func timeToExcelDate(t time.Time) float64 {
 	excelEpoch := time.Date(1899, 12, 30, 0, 0, 0, 0, time.UTC)
 	duration := t.Sub(excelEpoch)
 	return duration.Hours() / 24.0
 }
-
 func generateBasicExcelFile(req TimecardRequest) ([]byte, error) {
 	f := excelize.NewFile()
 	defer f.Close()
-
 	sheet := "Sheet1"
 	f.SetCellValue(sheet, "A1", "Employee Name:")
 	f.SetCellValue(sheet, "B1", req.EmployeeName)
@@ -1379,66 +1192,55 @@ func generateBasicExcelFile(req TimecardRequest) ([]byte, error) {
 	f.SetCellValue(sheet, "B3", req.Year)
 	f.SetCellValue(sheet, "A4", "Week:")
 	f.SetCellValue(sheet, "B4", req.WeekNumberLabel)
-
 	f.SetCellValue(sheet, "A6", "Date")
 	f.SetCellValue(sheet, "B6", "Job Number")
 	f.SetCellValue(sheet, "C6", "Labour Code")
 	f.SetCellValue(sheet, "D6", "Hours")
 	f.SetCellValue(sheet, "E6", "Overtime")
 	f.SetCellValue(sheet, "F6", "Night Shift")
-
 	// Build job name map
 	jobNameMap := make(map[string]string)
 	for _, job := range req.Jobs {
 		jobNameMap[job.JobNumber] = job.JobName
 	}
-
 	row := 7
 	totalHours := 0.0
 	totalOvertimeHours := 0.0
 	onCallCount := 0
-
 	for _, entry := range req.Entries {
 		t, err := time.Parse(time.RFC3339, entry.Date)
 		if err != nil {
 			continue
 		}
-
 		f.SetCellValue(sheet, fmt.Sprintf("A%d", row), t.Format("2006-01-02"))
 		f.SetCellValue(sheet, fmt.Sprintf("B%d", row), entry.JobNumber)
 		f.SetCellValue(sheet, fmt.Sprintf("C%d", row), entry.LabourCode)
 		f.SetCellValue(sheet, fmt.Sprintf("D%d", row), entry.Hours)
-
 		overtimeStr := "No"
 		if entry.Overtime {
 			overtimeStr = "Yes"
 			totalOvertimeHours += entry.Hours
 		}
 		f.SetCellValue(sheet, fmt.Sprintf("E%d", row), overtimeStr)
-
 		nightStr := "No"
 		if entry.IsNightShift {
 			nightStr = "Yes"
 		}
 		f.SetCellValue(sheet, fmt.Sprintf("F%d", row), nightStr)
-
 		// Check for On Call
 		labourCodeUpper := strings.ToUpper(strings.TrimSpace(entry.LabourCode))
 		if labourCodeUpper == "ON CALL" || labourCodeUpper == "ONCALL" || labourCodeUpper == "ONC" {
 			onCallCount++
 		}
-
 		totalHours += entry.Hours
 		row++
 	}
-
 	row++
 	f.SetCellValue(sheet, fmt.Sprintf("A%d", row), "Total Hours:")
 	f.SetCellValue(sheet, fmt.Sprintf("D%d", row), totalHours)
 	row++
 	f.SetCellValue(sheet, fmt.Sprintf("A%d", row), "Total Overtime:")
 	f.SetCellValue(sheet, fmt.Sprintf("D%d", row), totalOvertimeHours)
-
 	if onCallCount > 0 {
 		row += 2
 		f.SetCellValue(sheet, fmt.Sprintf("A%d", row), "On Call Daily:")
@@ -1455,22 +1257,18 @@ func generateBasicExcelFile(req TimecardRequest) ([]byte, error) {
 	}
 	return buffer.Bytes(), nil
 }
-
 func generateExpenseMileageExcelFile(req ExpenseMileageRequest) ([]byte, error) {
 	templatePath := "expense_mileage_template.xlsx"
-
 	originalStylesXML, err := extractStylesXMLFromTemplate(templatePath)
 	if err != nil {
 		log.Printf("Warning: Could not extract styles.xml from expense template: %v (continuing anyway)", err)
 		originalStylesXML = nil
 	}
-
 	f, err := excelize.OpenFile(templatePath)
 	if err != nil {
 		return nil, fmt.Errorf("open expense template: %w", err)
 	}
 	defer f.Close()
-
 	expenseSheet := "Expense"
 	mileageSheet := "Mileage"
 	expenseSheetIndex, err := f.GetSheetIndex(expenseSheet)
@@ -1481,12 +1279,10 @@ func generateExpenseMileageExcelFile(req ExpenseMileageRequest) ([]byte, error) 
 	if err != nil || mileageSheetIndex == -1 {
 		return nil, fmt.Errorf("template is missing '%s' sheet", mileageSheet)
 	}
-
 	submittalDateText := normalizeDateText(req.SubmittalDate)
 	if submittalDateText == "" {
 		submittalDateText = time.Now().Format("2006-01-02")
 	}
-
 	// Mileage header "Month" should reflect submission date, not receipt/mileage date range.
 	monthLabel := submittalDateText
 	if monthLabel == "" {
@@ -1495,12 +1291,10 @@ func generateExpenseMileageExcelFile(req ExpenseMileageRequest) ([]byte, error) 
 	if monthLabel == "" {
 		monthLabel = time.Now().Format("2006-01-02")
 	}
-
 	employeeName := strings.TrimSpace(req.EmployeeName)
 	if employeeName == "" {
 		employeeName = "YOUR NAME"
 	}
-
 	if req.CompanyLogoBase64 != nil {
 		logoBase64 := strings.TrimSpace(*req.CompanyLogoBase64)
 		if logoBase64 != "" {
@@ -1520,7 +1314,6 @@ func generateExpenseMileageExcelFile(req ExpenseMileageRequest) ([]byte, error) 
 			}
 		}
 	}
-
 	// Header values
 	setDateCellWithFallback(f, expenseSheet, "C6", submittalDateText)
 	_ = setCellPreserveStyle(f, expenseSheet, "H6", employeeName)
@@ -1529,13 +1322,11 @@ func generateExpenseMileageExcelFile(req ExpenseMileageRequest) ([]byte, error) 
 	_ = setCellPreserveStyle(f, mileageSheet, "B1", employeeName)
 	ensureExpenseHeaderRow(f, expenseSheet)
 	_ = setCellPreserveStyle(f, mileageSheet, "E1", monthLabel)
-
 	mileageFooterRow := detectMileageFooterRow(f, mileageSheet)
 	mileageEndRow := mileageFooterRow - 1
 	if mileageEndRow < 8 {
 		mileageEndRow = 8
 	}
-
 	// Update Phase Code block from latest Settings list
 	expenseCodeLines := make([]string, 0, len(req.ExpenseCodes))
 	for _, item := range req.ExpenseCodes {
@@ -1554,34 +1345,28 @@ func generateExpenseMileageExcelFile(req ExpenseMileageRequest) ([]byte, error) 
 		_ = setCellPreserveStyle(f, expenseSheet, "A45", strings.Join(expenseCodeLines, "\n"))
 	}
 	applyExpenseSubmissionEmail(f, expenseSheet, req.SubmissionEmail)
-
 	// Expense data rows
 	const expenseStartRow = 9
 	const expenseEndRow = 39
-
 	for row := expenseStartRow; row <= expenseEndRow; row++ {
 		for _, col := range []string{"A", "B", "C", "D", "E", "F", "G", "H", "I", "J"} {
 			cell := fmt.Sprintf("%s%d", col, row)
 			_ = setCellPreserveStyle(f, expenseSheet, cell, "")
 		}
 	}
-
 	groupedExpenses := groupExpenseItemsByMaterialCode(req.Expenses)
 	row := expenseStartRow
-
 expenseWriteLoop:
 	for groupIdx, group := range groupedExpenses {
 		for _, item := range group {
 			if row > expenseEndRow {
 				break expenseWriteLoop
 			}
-
 			setDateCellWithFallback(f, expenseSheet, fmt.Sprintf("A%d", row), item.Date)
 			setStringOrNumericCell(f, expenseSheet, fmt.Sprintf("B%d", row), item.JobNumber)
 			setStringOrNumericCell(f, expenseSheet, fmt.Sprintf("C%d", row), item.MaterialCode)
 			_ = setCellPreserveStyle(f, expenseSheet, fmt.Sprintf("D%d", row), strings.TrimSpace(item.Company))
 			_ = setCellPreserveStyle(f, expenseSheet, fmt.Sprintf("E%d", row), normalizeExpenseDescription(item.Description))
-
 			setOptionalNumericCell(f, expenseSheet, fmt.Sprintf("F%d", row), item.OfficeDisburse)
 			setOptionalNumericCell(f, expenseSheet, fmt.Sprintf("G%d", row), item.BeforeTax)
 			setOptionalNumericCell(f, expenseSheet, fmt.Sprintf("H%d", row), item.PST)
@@ -1589,7 +1374,6 @@ expenseWriteLoop:
 			setOptionalNumericCell(f, expenseSheet, fmt.Sprintf("J%d", row), item.TotalAfterTax)
 			row++
 		}
-
 		// Add a visual spacer row between description sections.
 		if groupIdx < len(groupedExpenses)-1 {
 			if row > expenseEndRow {
@@ -1598,7 +1382,6 @@ expenseWriteLoop:
 			row++
 		}
 	}
-
 	// Mileage data rows
 	const mileageStartRow = 8
 	for row := mileageStartRow; row <= mileageEndRow; row++ {
@@ -1607,32 +1390,27 @@ expenseWriteLoop:
 			_ = setCellPreserveStyle(f, mileageSheet, cell, "")
 		}
 	}
-
 	for idx, item := range req.Mileage {
 		row := mileageStartRow + idx
 		if row > mileageEndRow {
 			break
 		}
-
 		_ = setCellPreserveStyle(f, mileageSheet, fmt.Sprintf("A%d", row), normalizeDateTextWithLayout(item.Date, "02-01-06"))
 		_ = setCellPreserveStyle(f, mileageSheet, fmt.Sprintf("B%d", row), strings.TrimSpace(item.From))
 		_ = setCellPreserveStyle(f, mileageSheet, fmt.Sprintf("C%d", row), strings.TrimSpace(item.To))
 		_ = setCellPreserveStyle(f, mileageSheet, fmt.Sprintf("D%d", row), roundTo(item.Distance, 2))
 		_ = setCellPreserveStyle(f, mileageSheet, fmt.Sprintf("E%d", row), roundTo(item.Reimbursement, 2))
 	}
-
 	if err := updateMileageFooter(f, mileageSheet, mileageStartRow, mileageFooterRow); err != nil {
 		return nil, fmt.Errorf("update mileage footer: %w", err)
 	}
 	if err := setSheetPrintArea(f, mileageSheet, fmt.Sprintf("$A$1:$E$%d", mileageFooterRow)); err != nil {
-		log.Printf("Warning: Could not update mileage print area (continuing): %v", err)
+		return nil, fmt.Errorf("set mileage print area: %w", err)
 	}
-
 	buffer, err := f.WriteToBuffer()
 	if err != nil {
 		return nil, fmt.Errorf("write expense/mileage workbook: %w", err)
 	}
-
 	if originalStylesXML != nil {
 		restoredData, restoreErr := restoreStylesXML(buffer.Bytes(), originalStylesXML)
 		if restoreErr != nil {
@@ -1641,13 +1419,10 @@ expenseWriteLoop:
 		}
 		return restoredData, nil
 	}
-
 	return buffer.Bytes(), nil
 }
-
 func detectMileageFooterRow(f *excelize.File, sheet string) int {
 	const fallbackFooterRow = 48
-
 	for row := 1; row <= 200; row++ {
 		for _, col := range []string{"A", "B", "C", "D", "E"} {
 			value, err := f.GetCellValue(sheet, fmt.Sprintf("%s%d", col, row))
@@ -1659,16 +1434,13 @@ func detectMileageFooterRow(f *excelize.File, sheet string) int {
 			}
 		}
 	}
-
 	return fallbackFooterRow
 }
-
 func updateMileageFooter(f *excelize.File, sheet string, startRow, footerRow int) error {
 	endRow := footerRow - 1
 	if endRow < startRow {
 		endRow = startRow
 	}
-
 	if err := setCellPreserveStyle(f, sheet, fmt.Sprintf("C%d", footerRow), "TOTAL"); err != nil {
 		return err
 	}
@@ -1678,48 +1450,25 @@ func updateMileageFooter(f *excelize.File, sheet string, startRow, footerRow int
 	if err := f.SetCellFormula(sheet, fmt.Sprintf("E%d", footerRow), fmt.Sprintf("SUM(E%d:E%d)", startRow, endRow)); err != nil {
 		return err
 	}
-
 	if styleID, err := f.GetCellStyle(sheet, fmt.Sprintf("D%d", footerRow)); err == nil && styleID != 0 {
 		_ = f.SetCellStyle(sheet, fmt.Sprintf("D%d", footerRow), fmt.Sprintf("D%d", footerRow), styleID)
 	}
 	if styleID, err := f.GetCellStyle(sheet, fmt.Sprintf("E%d", footerRow)); err == nil && styleID != 0 {
 		_ = f.SetCellStyle(sheet, fmt.Sprintf("E%d", footerRow), fmt.Sprintf("E%d", footerRow), styleID)
 	}
-
 	return nil
 }
-
 func setSheetPrintArea(f *excelize.File, sheet, ref string) error {
-	// excelize v2.8.x rejects built-in names that include '.', so setting
-	// "_xlnm.Print_Area" via SetDefinedName can fail. We try a best-effort
-	// update and fall back silently so workbook generation never fails.
 	_ = f.DeleteDefinedName(&excelize.DefinedName{
 		Name:  "_xlnm.Print_Area",
 		Scope: sheet,
 	})
-	if err := f.SetDefinedName(&excelize.DefinedName{
+	return f.SetDefinedName(&excelize.DefinedName{
 		Name:     "_xlnm.Print_Area",
 		Scope:    sheet,
 		RefersTo: fmt.Sprintf("%s!%s", sheet, ref),
-	}); err == nil {
-		return nil
-	}
-
-	// Fallback alias for older excelize validation rules.
-	_ = f.DeleteDefinedName(&excelize.DefinedName{
-		Name:  "Print_Area",
-		Scope: sheet,
 	})
-	if err := f.SetDefinedName(&excelize.DefinedName{
-		Name:     "Print_Area",
-		Scope:    sheet,
-		RefersTo: fmt.Sprintf("%s!%s", sheet, ref),
-	}); err != nil {
-		return err
-	}
-	return nil
 }
-
 func setOptionalNumericCell(f *excelize.File, sheet, cell string, value *float64) {
 	if value == nil {
 		_ = setCellPreserveStyle(f, sheet, cell, "")
@@ -1727,7 +1476,6 @@ func setOptionalNumericCell(f *excelize.File, sheet, cell string, value *float64
 	}
 	_ = setCellPreserveStyle(f, sheet, cell, roundTo(*value, 2))
 }
-
 func ensureExpenseHeaderRow(f *excelize.File, sheet string) {
 	headers := map[string]string{
 		"A8": "Date",
@@ -1741,12 +1489,10 @@ func ensureExpenseHeaderRow(f *excelize.File, sheet string) {
 		"I8": "GST",
 		"J8": "Total after Tax",
 	}
-
 	for cell, value := range headers {
 		_ = setCellPreserveStyle(f, sheet, cell, value)
 	}
 }
-
 func setDateCellWithFallback(f *excelize.File, sheet, cell, value string) {
 	parsed := parseFlexibleDate(value)
 	if !parsed.IsZero() {
@@ -1755,14 +1501,12 @@ func setDateCellWithFallback(f *excelize.File, sheet, cell, value string) {
 	}
 	_ = setCellPreserveStyle(f, sheet, cell, strings.TrimSpace(value))
 }
-
 func setStringOrNumericCell(f *excelize.File, sheet, cell, value string) {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
 		_ = setCellPreserveStyle(f, sheet, cell, "")
 		return
 	}
-
 	// For purely numeric codes without leading zeroes, write numeric values so Excel
 	// does not flag "Number stored as text" (green triangles).
 	if regexp.MustCompile(`^\d+$`).MatchString(trimmed) {
@@ -1773,33 +1517,27 @@ func setStringOrNumericCell(f *excelize.File, sheet, cell, value string) {
 			}
 		}
 	}
-
 	_ = setCellPreserveStyle(f, sheet, cell, trimmed)
 }
-
 func applyExpenseSubmissionEmail(f *excelize.File, sheet string, submissionEmail *string) {
 	if submissionEmail == nil {
 		return
 	}
-
 	email := strings.TrimSpace(*submissionEmail)
 	if email == "" {
 		return
 	}
-
 	const instructionCell = "D45"
 	instructions, err := f.GetCellValue(sheet, instructionCell)
 	if err != nil || strings.TrimSpace(instructions) == "" {
 		return
 	}
-
 	submissionLineRegex := regexp.MustCompile(`(?m)(6\.\s*Submission:\s*Email\s+the\s+form\s+to\s*)([^.\n]+?)(\.\s*)$`)
 	if submissionLineRegex.MatchString(instructions) {
 		updated := submissionLineRegex.ReplaceAllString(instructions, "${1}"+email+".")
 		_ = setCellPreserveStyle(f, sheet, instructionCell, updated)
 		return
 	}
-
 	// Fallback: replace first email-like value if submission line format changes.
 	emailRegex := regexp.MustCompile(`(?i)[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}`)
 	if emailRegex.MatchString(instructions) {
@@ -1807,19 +1545,15 @@ func applyExpenseSubmissionEmail(f *excelize.File, sheet string, submissionEmail
 		_ = setCellPreserveStyle(f, sheet, instructionCell, updated)
 	}
 }
-
 func groupExpenseItemsByMaterialCode(items []ExpenseLineItem) [][]ExpenseLineItem {
 	if len(items) == 0 {
 		return nil
 	}
-
 	normalizedItems := make([]ExpenseLineItem, len(items))
 	copy(normalizedItems, items)
-
 	sort.SliceStable(normalizedItems, func(i, j int) bool {
 		leftKey := expenseMaterialGroupKey(normalizedItems[i].MaterialCode)
 		rightKey := expenseMaterialGroupKey(normalizedItems[j].MaterialCode)
-
 		if leftKey != rightKey {
 			if leftKey == "" {
 				return false
@@ -1829,7 +1563,6 @@ func groupExpenseItemsByMaterialCode(items []ExpenseLineItem) [][]ExpenseLineIte
 			}
 			return strings.Compare(leftKey, rightKey) < 0
 		}
-
 		leftDate := parseFlexibleDate(normalizedItems[i].Date)
 		rightDate := parseFlexibleDate(normalizedItems[j].Date)
 		switch {
@@ -1843,16 +1576,13 @@ func groupExpenseItemsByMaterialCode(items []ExpenseLineItem) [][]ExpenseLineIte
 			return strings.TrimSpace(normalizedItems[i].Description) < strings.TrimSpace(normalizedItems[j].Description)
 		}
 	})
-
 	grouped := make([][]ExpenseLineItem, 0)
 	var currentGroup []ExpenseLineItem
 	currentKey := ""
-
 	flushCurrentGroup := func() {
 		if len(currentGroup) == 0 {
 			return
 		}
-
 		var disburseTotal float64
 		hasDisburse := false
 		for index := range currentGroup {
@@ -1863,16 +1593,13 @@ func groupExpenseItemsByMaterialCode(items []ExpenseLineItem) [][]ExpenseLineIte
 			}
 			currentGroup[index].OfficeDisburse = nil
 		}
-
 		if hasDisburse {
 			total := roundTo(disburseTotal, 2)
 			currentGroup[len(currentGroup)-1].OfficeDisburse = &total
 		}
-
 		grouped = append(grouped, currentGroup)
 		currentGroup = nil
 	}
-
 	for _, item := range normalizedItems {
 		key := expenseMaterialGroupKey(item.MaterialCode)
 		if len(currentGroup) == 0 {
@@ -1886,15 +1613,12 @@ func groupExpenseItemsByMaterialCode(items []ExpenseLineItem) [][]ExpenseLineIte
 		}
 		currentGroup = append(currentGroup, item)
 	}
-
 	flushCurrentGroup()
 	return grouped
 }
-
 func expenseMaterialGroupKey(value string) string {
 	return strings.ToLower(strings.TrimSpace(value))
 }
-
 func normalizeExpenseDescription(value string) string {
 	description := strings.TrimSpace(value)
 	if description == "" {
@@ -1902,11 +1626,9 @@ func normalizeExpenseDescription(value string) string {
 	}
 	return description
 }
-
 func normalizeDateText(value string) string {
 	return normalizeDateTextWithLayout(value, "2006-01-02")
 }
-
 func normalizeDateTextWithLayout(value, layout string) string {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
@@ -1918,13 +1640,11 @@ func normalizeDateTextWithLayout(value, layout string) string {
 	}
 	return parsed.Format(layout)
 }
-
 func parseFlexibleDate(value string) time.Time {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
 		return time.Time{}
 	}
-
 	layouts := []string{
 		time.RFC3339,
 		"2006-01-02",
@@ -1932,7 +1652,6 @@ func parseFlexibleDate(value string) time.Time {
 		"Jan 2, 2006",
 		"January 2, 2006",
 	}
-
 	for _, layout := range layouts {
 		if parsed, err := time.Parse(layout, trimmed); err == nil {
 			return parsed
@@ -1940,7 +1659,6 @@ func parseFlexibleDate(value string) time.Time {
 	}
 	return time.Time{}
 }
-
 func roundTo(value float64, decimals int) float64 {
 	factor := 1.0
 	for i := 0; i < decimals; i++ {
@@ -1948,7 +1666,6 @@ func roundTo(value float64, decimals int) float64 {
 	}
 	return math.Round(value*factor) / factor
 }
-
 // generatePDFFile generates a PDF version of the timecard
 // Note: This is a basic implementation. For production use with better formatting,
 // consider using github.com/jung-kurt/gofpdf or github.com/signintech/gopdf
@@ -1956,12 +1673,9 @@ func generatePDFFile(req TimecardRequest) ([]byte, error) {
 	// Create a simple PDF structure
 	// This is a minimal PDF implementation that creates a basic PDF document
 	// For better formatting, you should use a PDF library like gofpdf
-
 	var pdf bytes.Buffer
-
 	// PDF Header
 	pdf.WriteString("%PDF-1.4\n")
-
 	// For a proper implementation, you would:
 	// 1. Install a PDF library: go get github.com/jung-kurt/gofpdf
 	// 2. Use it to create formatted PDFs with the logo, tables, etc.
@@ -1977,57 +1691,45 @@ func generatePDFFile(req TimecardRequest) ([]byte, error) {
 	//   }
 	//   // Add timecard content...
 	//   return pdf.Output(&pdf), nil
-
 	// For now, return a simple error message indicating PDF generation needs implementation
 	// You can implement this using your preferred PDF library
 	return nil, fmt.Errorf("PDF generation is not yet fully implemented. Please use Excel output or implement PDF generation using a library like github.com/jung-kurt/gofpdf")
 }
-
 func sendEmail(to string, cc *string, subject string, body string, attachment []byte, employeeName string) error {
 	smtpHost := os.Getenv("SMTP_HOST")
 	smtpPort := os.Getenv("SMTP_PORT")
 	smtpUser := os.Getenv("SMTP_USER")
 	smtpPass := os.Getenv("SMTP_PASS")
 	fromEmail := os.Getenv("SMTP_FROM")
-
 	if smtpHost == "" || smtpPort == "" || smtpUser == "" || smtpPass == "" {
 		return fmt.Errorf("SMTP not configured")
 	}
 	if fromEmail == "" {
 		fromEmail = smtpUser
 	}
-
 	recipients := splitAndTrim(to)
 	var ccRecipients []string
 	if cc != nil && *cc != "" {
 		ccRecipients = splitAndTrim(*cc)
 	}
-
 	allRecipients := append([]string{}, recipients...)
 	allRecipients = append(allRecipients, ccRecipients...)
-
 	fileName := fmt.Sprintf("timecard_%s_%s.xlsx",
 		strings.ReplaceAll(employeeName, " ", "_"),
 		time.Now().Format("2006-01-02"))
-
 	message := buildEmailMessage(fromEmail, recipients, ccRecipients, subject, body, attachment, fileName)
-
 	auth := smtp.PlainAuth("", smtpUser, smtpPass, smtpHost)
 	addr := fmt.Sprintf("%s:%s", smtpHost, smtpPort)
-
 	err := smtp.SendMail(addr, auth, fromEmail, allRecipients, []byte(message))
 	if err != nil {
 		return fmt.Errorf("failed to send email: %v", err)
 	}
-
 	log.Printf("Email sent successfully to %s", to)
 	return nil
 }
-
 func buildEmailMessage(from string, to []string, cc []string, subject string, body string, attachment []byte, fileName string) string {
 	boundary := "==BOUNDARY=="
 	var buf bytes.Buffer
-
 	buf.WriteString(fmt.Sprintf("From: %s\r\n", from))
 	buf.WriteString(fmt.Sprintf("To: %s\r\n", strings.Join(to, ", ")))
 	if len(cc) > 0 {
@@ -2037,21 +1739,18 @@ func buildEmailMessage(from string, to []string, cc []string, subject string, bo
 	buf.WriteString("MIME-Version: 1.0\r\n")
 	buf.WriteString(fmt.Sprintf("Content-Type: multipart/mixed; boundary=\"%s\"\r\n", boundary))
 	buf.WriteString("\r\n")
-
 	buf.WriteString(fmt.Sprintf("--%s\r\n", boundary))
 	buf.WriteString("Content-Type: text/plain; charset=\"utf-8\"\r\n")
 	buf.WriteString("Content-Transfer-Encoding: quoted-printable\r\n")
 	buf.WriteString("\r\n")
 	buf.WriteString(body)
 	buf.WriteString("\r\n\r\n")
-
 	if len(attachment) > 0 {
 		buf.WriteString(fmt.Sprintf("--%s\r\n", boundary))
 		buf.WriteString("Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\r\n")
 		buf.WriteString(fmt.Sprintf("Content-Disposition: attachment; filename=\"%s\"\r\n", fileName))
 		buf.WriteString("Content-Transfer-Encoding: base64\r\n")
 		buf.WriteString("\r\n")
-
 		encoded := base64.StdEncoding.EncodeToString(attachment)
 		for i := 0; i < len(encoded); i += 76 {
 			end := i + 76
@@ -2063,11 +1762,9 @@ func buildEmailMessage(from string, to []string, cc []string, subject string, bo
 		}
 		buf.WriteString("\r\n")
 	}
-
 	buf.WriteString(fmt.Sprintf("--%s--\r\n", boundary))
 	return buf.String()
 }
-
 func splitAndTrim(s string) []string {
 	parts := strings.Split(s, ",")
 	out := make([]string, 0, len(parts))
@@ -2079,7 +1776,6 @@ func splitAndTrim(s string) []string {
 	}
 	return out
 }
-
 func getEnvFloat(key string) (*float64, error) {
 	v := strings.TrimSpace(os.Getenv(key))
 	if v == "" {
