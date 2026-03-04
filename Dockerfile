@@ -14,15 +14,18 @@ ENV GOPROXY=https://proxy.golang.org,direct
 ENV GOPRIVATE=""
 ENV GOSUMDB=sum.golang.org
 
-COPY go.mod go.sum ./
+# Do not require go.sum to exist in the repo. This keeps the build from
+# failing at COPY time if go.sum is missing remotely.
+COPY go.mod ./
 RUN go mod download
 
-# Copy only what runtime/build needs
-COPY main.go render.yaml template.xlsx expense_mileage_template.xlsx ./
+COPY . .
+RUN go mod download
 
-# Verify BOTH templates exist
+# Fail build early if either template file is missing from the image.
 RUN ls -lah /app && \
-    ls -lah /app/template.xlsx /app/expense_mileage_template.xlsx && \
+    ls -lah /app/template.xlsx && \
+    ls -lah /app/expense_mileage_template.xlsx && \
     sha256sum /app/template.xlsx /app/expense_mileage_template.xlsx && \
     test -f /app/template.xlsx && \
     test -f /app/expense_mileage_template.xlsx
@@ -30,4 +33,5 @@ RUN ls -lah /app && \
 RUN go build -o server .
 
 EXPOSE 10000
+
 CMD ["./server"]
