@@ -1,4 +1,5 @@
 package main
+
 import (
 	"archive/zip"
 	"bytes"
@@ -6,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/xuri/excelize/v2"
 	"image"
 	_ "image/jpeg"
 	_ "image/png"
@@ -20,8 +22,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"github.com/xuri/excelize/v2"
 )
+
 // setCellPreserveStyle writes a value into a cell while preserving the cell's original style (borders, number formats, alignment, etc).
 // This is useful because some Excel clients will "repair" workbooks if the calc chain/style graph is inconsistent,
 // and the repair process can strip formatting. We keep the template style intact by re-applying it after writes.
@@ -35,6 +37,7 @@ func setCellPreserveStyle(f *excelize.File, sheet, cell string, value any) error
 	}
 	return nil
 }
+
 // removeCalcChain removes xl/calcChain.xml if present.
 // Note: In excelize v2.9.0+, calcChain is handled automatically.
 // This function is kept for compatibility but does nothing in newer versions.
@@ -123,6 +126,7 @@ func forceRecalcAndRemoveCalcChain(xlsx []byte) ([]byte, error) {
 	}
 	return out.Bytes(), nil
 }
+
 // extractStylesXMLFromTemplate extracts the original styles.xml from the template file
 // This preserves the exact formatting that works before excelize potentially corrupts it
 func extractStylesXMLFromTemplate(templatePath string) ([]byte, error) {
@@ -150,6 +154,7 @@ func extractStylesXMLFromTemplate(templatePath string) ([]byte, error) {
 	}
 	return nil, fmt.Errorf("styles.xml not found in template")
 }
+
 // restoreStylesXML replaces the styles.xml in the Excel file with the original from the template
 func restoreStylesXML(excelData []byte, originalStylesXML []byte) ([]byte, error) {
 	zr, err := zip.NewReader(bytes.NewReader(excelData), int64(len(excelData)))
@@ -233,6 +238,7 @@ func ensureCalcPrAutoFull(b []byte) []byte {
 	}
 	return b
 }
+
 // buildCalcPrElement creates a calcPr element with the required attributes
 func buildCalcPrElement(existingAttrs string) string {
 	attrs := existingAttrs
@@ -263,10 +269,12 @@ func removeCalcChainContentType(b []byte) []byte {
 	s = re.ReplaceAllString(s, "")
 	return []byte(s)
 }
+
 // =============================================================================
 // DATA STRUCTURES - Clear naming convention:
 //   - job_number: The project/job identifier (e.g., "234", "1017")
 //   - labour_code: The work type code (e.g., "227", "201", "On Call")
+//
 // =============================================================================
 type TimecardRequest struct {
 	EmployeeName        string       `json:"employee_name"`
@@ -282,6 +290,7 @@ type TimecardRequest struct {
 	OnCallPerCallAmount *float64     `json:"on_call_per_call_amount,omitempty"`
 	CompanyLogoBase64   *string      `json:"company_logo_base64,omitempty"`
 }
+
 // Job represents a job/project with its number and display name
 // job_number: The project identifier (e.g., "234", "1017")
 // job_name: Human-readable name or description
@@ -289,11 +298,13 @@ type Job struct {
 	JobNumber string `json:"job_number"`
 	JobName   string `json:"job_name"`
 }
+
 // LabourCode represents a type of work
 type LabourCode struct {
 	Code string `json:"code"`
 	Name string `json:"name"`
 }
+
 // Entry represents a single timecard entry
 // job_number: The project/job identifier
 // labour_code: The work type code (e.g., "227", "On Call")
@@ -311,6 +322,7 @@ type WeekData struct {
 	WeekLabel     string  `json:"week_label"`
 	Entries       []Entry `json:"entries"`
 }
+
 // EmailTimecardRequest for the email endpoint
 type EmailTimecardRequest struct {
 	TimecardRequest
@@ -352,6 +364,7 @@ type ExpenseCodeItem struct {
 	Name string `json:"name"`
 	Code string `json:"code"`
 }
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -740,6 +753,7 @@ func generateExcelFile(req TimecardRequest) ([]byte, error) {
 	}
 	return buffer.Bytes(), nil
 }
+
 type weekSummaryTotals struct {
 	OT         float64
 	DT         float64
@@ -751,6 +765,7 @@ type weekSummaryTotals struct {
 	HasOnCall  bool
 	OnCallHits int
 }
+
 func applyFinalSummaryTotals(
 	f *excelize.File,
 	week2Sheet string,
@@ -826,6 +841,7 @@ func summarizeWeekEntries(
 	}
 	return totals
 }
+
 // insertLogoIntoExcel inserts a logo image into the Excel file
 // The logo is inserted at cell A1 (top-left corner) with appropriate sizing
 // Returns the temp file path so it can be cleaned up after WriteToBuffer is called
@@ -881,6 +897,7 @@ func insertLogoIntoExcel(f *excelize.File, logoBase64 string) (string, error) {
 	// Return the temp file name so caller can clean it up after WriteToBuffer
 	return tmpFileName, nil
 }
+
 // insertLogoIntoSheet inserts a base64 PNG/JPG logo at a specific sheet/cell.
 func insertLogoIntoSheet(
 	f *excelize.File,
@@ -925,6 +942,7 @@ func insertLogoIntoSheet(
 	}
 	return nil
 }
+
 // insertLogoIntoSheetFitted inserts a logo at a consistent visual size by fitting it
 // inside a fixed bounding box while preserving aspect ratio.
 func insertLogoIntoSheetFitted(
@@ -980,6 +998,7 @@ func insertLogoIntoSheetFitted(
 	}
 	return nil
 }
+
 // clearTemplateHeaderLogoPictures removes any pre-baked template logo images in the
 // top-left header area so a custom export logo doesn't overlap with the default logo.
 func clearTemplateHeaderLogoPictures(f *excelize.File, sheetName string) {
@@ -1130,6 +1149,7 @@ func fillWeekSheet(f *excelize.File, sheetName string, req TimecardRequest, week
 	log.Printf("=== Week %d completed ===", weekNum)
 	return nil
 }
+
 // columnKey creates a unique key for grouping entries by job+labour+night
 // Format: "jobNumber|labourCode|night" where night is "1" or "0"
 func columnKey(e Entry) string {
@@ -1141,6 +1161,7 @@ func columnKey(e Entry) string {
 	}
 	return fmt.Sprintf("%s|%s|%s", jobNumber, labourCode, night)
 }
+
 // splitColumnKey extracts components from a column key
 // Returns: jobNumber, labourCode, isNight
 func splitColumnKey(k string) (string, string, bool) {
@@ -1159,6 +1180,7 @@ func splitColumnKey(k string) (string, string, bool) {
 	}
 	return jobNumber, labourCode, isNight
 }
+
 // getUniqueColumnsForType returns unique column keys for either regular or overtime entries
 func getUniqueColumnsForType(entries []Entry, isOvertime bool) []string {
 	seen := make(map[string]bool)
@@ -1459,15 +1481,38 @@ func updateMileageFooter(f *excelize.File, sheet string, startRow, footerRow int
 	return nil
 }
 func setSheetPrintArea(f *excelize.File, sheet, ref string) error {
+	if strings.TrimSpace(sheet) == "" || strings.TrimSpace(ref) == "" {
+		return nil
+	}
+
+	// Cleanup any existing names (new and legacy) before writing.
+	_ = f.DeleteDefinedName(&excelize.DefinedName{
+		Name:  "Print_Area",
+		Scope: sheet,
+	})
+	_ = f.DeleteDefinedName(&excelize.DefinedName{
+		Name: "Print_Area",
+	})
 	_ = f.DeleteDefinedName(&excelize.DefinedName{
 		Name:  "_xlnm.Print_Area",
 		Scope: sheet,
 	})
-	return f.SetDefinedName(&excelize.DefinedName{
-		Name:     "_xlnm.Print_Area",
-		Scope:    sheet,
-		RefersTo: fmt.Sprintf("%s!%s", sheet, ref),
+	_ = f.DeleteDefinedName(&excelize.DefinedName{
+		Name: "_xlnm.Print_Area",
 	})
+
+	// IMPORTANT: excelize expects "Print_Area" (not "_xlnm.Print_Area").
+	escapedSheet := strings.ReplaceAll(sheet, "'", "''")
+	refersTo := fmt.Sprintf("'%s'!%s", escapedSheet, ref)
+	if err := f.SetDefinedName(&excelize.DefinedName{
+		Name:     "Print_Area",
+		Scope:    sheet,
+		RefersTo: refersTo,
+	}); err != nil {
+		// Never fail workbook generation over print metadata.
+		log.Printf("Warning: could not set print area for sheet %q (%s): %v", sheet, ref, err)
+	}
+	return nil
 }
 func setOptionalNumericCell(f *excelize.File, sheet, cell string, value *float64) {
 	if value == nil {
@@ -1666,6 +1711,7 @@ func roundTo(value float64, decimals int) float64 {
 	}
 	return math.Round(value*factor) / factor
 }
+
 // generatePDFFile generates a PDF version of the timecard
 // Note: This is a basic implementation. For production use with better formatting,
 // consider using github.com/jung-kurt/gofpdf or github.com/signintech/gopdf
